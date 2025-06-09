@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "P2P2 Test Extension",
+  "version": "1.0.0",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://api.cloudflare.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+}
