@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>P2P2 Extension Test</title>
+    <style>
+        body { 
+            width: 400px; 
+            padding: 20px; 
+            font-family: monospace;
+        }
+        .status { 
+            margin: 10px 0; 
+            padding: 10px; 
+            border-radius: 4px;
+        }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+        .connecting { background: #fff3cd; color: #856404; }
+        button { padding: 8px 16px; margin: 5px; }
+        #log { 
+            max-height: 200px; 
+            overflow-y: auto; 
+            border: 1px solid #ccc; 
+            padding: 10px;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h2>P2P2 Extension Test</h2>
+    <div id="status" class="status disconnected">Disconnected</div>
+    <div>
+        <button id="connect">Connect</button>
+        <button id="disconnect">Disconnect</button>
+    </div>
+    <div id="log"></div>
+    
+    <script type="module" src="popup.js"></script>
+</body>
+</html>

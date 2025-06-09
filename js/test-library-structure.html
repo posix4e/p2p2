@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>P2P2 Library Structure Test</title>
+    <style>
+        body { font-family: monospace; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .test { margin: 20px 0; padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .pending { background: #fff3cd; color: #856404; }
+        .log { margin: 5px 0; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <h1>P2P2 Library Structure Test</h1>
+    <div id="test-status" class="test pending">
+        <h2>Test Status: <span id="status">Running...</span></h2>
+        <div id="log"></div>
+    </div>
+    
+    <script type="module">
+        import { P2P2, P2P2Room, P2P2Core, CloudflareDNSDiscovery, WebRTCManager } from './dist/index.js';
+        import { BrowserAdapter, ChromeExtensionAdapter, NodeAdapter } from './dist/adapters/EnvironmentAdapter.js';
+        
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log');
+        const testEl = document.getElementById('test-status');
+        
+        function log(message, success = true) {
+            const div = document.createElement('div');
+            div.className = 'log';
+            div.textContent = `${success ? '✓' : '✗'} ${message}`;
+            div.style.color = success ? 'green' : 'red';
+            logEl.appendChild(div);
+            console.log(message);
+        }
+        
+        let allTestsPassed = true;
+        
+        function test(name, fn) {
+            try {
+                fn();
+                log(name, true);
+            } catch (error) {
+                log(`${name}: ${error.message}`, false);
+                allTestsPassed = false;
+            }
+        }
+        
+        // Run tests
+        test('P2P2 factory class exists', () => {
+            if (typeof P2P2 !== 'function') throw new Error('P2P2 is not a function');
+        });
+        
+        test('P2P2.joinRoom method exists', () => {
+            if (typeof P2P2.joinRoom !== 'function') throw new Error('joinRoom is not a function');
+        });
+        
+        test('P2P2.createRoomFromEnvironment method exists', () => {
+            if (typeof P2P2.createRoomFromEnvironment !== 'function') throw new Error('createRoomFromEnvironment is not a function');
+        });
+        
+        test('P2P2.createRoomForChromeExtension method exists', () => {
+            if (typeof P2P2.createRoomForChromeExtension !== 'function') throw new Error('createRoomForChromeExtension is not a function');
+        });
+        
+        test('P2P2Room class exists', () => {
+            if (typeof P2P2Room !== 'function') throw new Error('P2P2Room is not a function');
+        });
+        
+        test('P2P2Core class exists', () => {
+            if (typeof P2P2Core !== 'function') throw new Error('P2P2Core is not a function');
+        });
+        
+        test('CloudflareDNSDiscovery class exists', () => {
+            if (typeof CloudflareDNSDiscovery !== 'function') throw new Error('CloudflareDNSDiscovery is not a function');
+        });
+        
+        test('WebRTCManager class exists', () => {
+            if (typeof WebRTCManager !== 'function') throw new Error('WebRTCManager is not a function');
+        });
+        
+        test('BrowserAdapter exists', () => {
+            if (typeof BrowserAdapter !== 'function') throw new Error('BrowserAdapter is not a function');
+        });
+        
+        test('ChromeExtensionAdapter exists', () => {
+            if (typeof ChromeExtensionAdapter !== 'function') throw new Error('ChromeExtensionAdapter is not a function');
+        });
+        
+        test('NodeAdapter exists', () => {
+            if (typeof NodeAdapter !== 'function') throw new Error('NodeAdapter is not a function');
+        });
+        
+        test('Can create room instance', () => {
+            const room = P2P2.joinRoom({
+                domain: 'test.com',
+                zoneId: 'test-zone',
+                apiToken: 'test-token'
+            }, 'test-room');
+            
+            if (!room) throw new Error('Failed to create room');
+            if (typeof room.join !== 'function') throw new Error('Room missing join method');
+            if (typeof room.leave !== 'function') throw new Error('Room missing leave method');
+            if (typeof room.send !== 'function') throw new Error('Room missing send method');
+            if (typeof room.onPeerJoin !== 'function') throw new Error('Room missing onPeerJoin method');
+            if (typeof room.onPeerLeave !== 'function') throw new Error('Room missing onPeerLeave method');
+            if (typeof room.onData !== 'function') throw new Error('Room missing onData method');
+        });
+        
+        test('Can create CloudflareDNSDiscovery instance', () => {
+            const dns = new CloudflareDNSDiscovery('test.com', 'zone-id', 'api-token');
+            if (!dns) throw new Error('Failed to create DNS discovery');
+            if (typeof dns.getPeerId !== 'function') throw new Error('DNS discovery missing getPeerId method');
+        });
+        
+        test('Can create WebRTCManager instance', () => {
+            const rtc = new WebRTCManager();
+            if (!rtc) throw new Error('Failed to create WebRTC manager');
+        });
+        
+        test('Browser adapter works correctly', () => {
+            const adapter = new BrowserAdapter();
+            
+            // Test timer functions
+            const timeoutId = adapter.setTimeout(() => {}, 100);
+            adapter.clearTimeout(timeoutId);
+            
+            const intervalId = adapter.setInterval(() => {}, 100);
+            adapter.clearInterval(intervalId);
+            
+            // Test environment variable (should return undefined in browser)
+            const envVar = adapter.getEnvironmentVariable('TEST');
+            if (envVar !== undefined) throw new Error('Browser should not have env vars');
+        });
+        
+        // Update status
+        if (allTestsPassed) {
+            testEl.className = 'test success';
+            statusEl.textContent = 'All tests passed!';
+            window.testResult = 'PASSED';
+        } else {
+            testEl.className = 'test error';
+            statusEl.textContent = 'Some tests failed';
+            window.testResult = 'FAILED';
+        }
+    </script>
+</body>
+</html>

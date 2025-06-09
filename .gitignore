@@ -1,0 +1,38 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj
+
+# Environment files
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# Build artifacts
+*.o
+*.dylib
+*.so
+*.dll
+
+# Logs
+*.log
+
+# Dependencies
+node_modules/
+
+# JavaScript build artifacts
+js/dist/
+*.js.map
+*.d.ts.map
+
+# Test artifacts
+js/test-results/
+js/playwright-report/
+js/playwright/.cache/

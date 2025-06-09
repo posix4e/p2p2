@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "P2P2 Chrome Extension Example",
+  "version": "1.0.0",
+  "description": "Example of using P2P2 library in a Chrome extension",
+  "permissions": [
+    "storage"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}

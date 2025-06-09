@@ -1,0 +1,136 @@
+import Foundation
+@preconcurrency import WebRTC
+
+public final class WebRTCManager: @unchecked Sendable {
+    nonisolated(unsafe) private static let factory: RTCPeerConnectionFactory = {
+        RTCInitializeSSL()
+        let videoEncoderFactory = RTCDefaultVideoEncoderFactory()
+        let videoDecoderFactory = RTCDefaultVideoDecoderFactory()
+        return RTCPeerConnectionFactory(
+            encoderFactory: videoEncoderFactory,
+            decoderFactory: videoDecoderFactory
+        )
+    }()
+    
+    private let iceServers: [RTCIceServer]
+    private let constraints: RTCMediaConstraints
+    
+    init(stunServers: [String] = ["stun:stun.l.google.com:19302"], turnServers: [RoomConfig.TURNServer] = []) {
+        var servers: [RTCIceServer] = []
+        
+        // Add STUN servers
+        for stun in stunServers {
+            servers.append(RTCIceServer(urlStrings: [stun]))
+        }
+        
+        // Add TURN servers
+        for turn in turnServers {
+            if let username = turn.username, let credential = turn.credential {
+                servers.append(RTCIceServer(
+                    urlStrings: [turn.url],
+                    username: username,
+                    credential: credential
+                ))
+            } else {
+                servers.append(RTCIceServer(urlStrings: [turn.url]))
+            }
+        }
+        
+        self.iceServers = servers
+        
+        // Set up constraints
+        let mandatoryConstraints = [
+            "OfferToReceiveAudio": "false",
+            "OfferToReceiveVideo": "false"
+        ]
+        
+        self.constraints = RTCMediaConstraints(
+            mandatoryConstraints: mandatoryConstraints,
+            optionalConstraints: nil
+        )
+    }
+    
+    func createPeerConnection() async throws -> RTCPeerConnection {
+        let config = RTCConfiguration()
+        config.iceServers = iceServers
+        config.bundlePolicy = .balanced
+        config.rtcpMuxPolicy = .require
+        config.tcpCandidatePolicy = .enabled
+        config.continualGatheringPolicy = .gatherContinually
+        config.sdpSemantics = .unifiedPlan
+        
+        guard let connection = Self.factory.peerConnection(
+            with: config,
+            constraints: constraints,
+            delegate: nil
+        ) else {
+            throw P2P2Error.connectionFailed("Failed to create peer connection")
+        }
+        
+        return connection
+    }
+    
+    func createOffer(for connection: RTCPeerConnection) async throws -> RTCSessionDescription {
+        return try await withCheckedThrowingContinuation { continuation in
+            connection.offer(for: constraints) { sdp, error in
+                if let error = error {
+                    continuation.resume(throwing: P2P2Error.signalingFailed(error.localizedDescription))
+                } else if let sdp = sdp {
+                    continuation.resume(returning: sdp)
+                } else {
+                    continuation.resume(throwing: P2P2Error.signalingFailed("No SDP generated"))
+                }
+            }
+        }
+    }
+    
+    func createAnswer(for connection: RTCPeerConnection) async throws -> RTCSessionDescription {
+        return try await withCheckedThrowingContinuation { continuation in
+            connection.answer(for: constraints) { sdp, error in
+                if let error = error {
+                    continuation.resume(throwing: P2P2Error.signalingFailed(error.localizedDescription))
+                } else if let sdp = sdp {
+                    continuation.resume(returning: sdp)
+                } else {
+                    continuation.resume(throwing: P2P2Error.signalingFailed("No SDP generated"))
+                }
+            }
+        }
+    }
+    
+    func setLocalDescription(_ sdp: RTCSessionDescription, for connection: RTCPeerConnection) async throws {
+        return try await withCheckedThrowingContinuation { continuation in
+            connection.setLocalDescription(sdp) { error in
+                if let error = error {
+                    continuation.resume(throwing: P2P2Error.signalingFailed(error.localizedDescription))
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+    
+    func setRemoteDescription(_ sdp: RTCSessionDescription, for connection: RTCPeerConnection) async throws {
+        return try await withCheckedThrowingContinuation { continuation in
+            connection.setRemoteDescription(sdp) { error in
+                if let error = error {
+                    continuation.resume(throwing: P2P2Error.signalingFailed(error.localizedDescription))
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+    
+    func addIceCandidate(_ candidate: RTCIceCandidate, to connection: RTCPeerConnection) async throws {
+        return try await withCheckedThrowingContinuation { continuation in
+            connection.add(candidate) { error in
+                if let error = error {
+                    continuation.resume(throwing: P2P2Error.signalingFailed(error.localizedDescription))
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+}
