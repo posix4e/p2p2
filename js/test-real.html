@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>P2P2 Real Test</title>
+</head>
+<body>
+    <h1>P2P2 Real Test</h1>
+    <div id="status">Loading P2P2...</div>
+    <script type="module">
+        import { P2P2 } from './dist/index.js';
+        window.P2P2 = P2P2;
+        document.getElementById('status').textContent = 'P2P2 loaded - ready for testing';
+        console.log('P2P2 loaded');
+    </script>
+</body>
+</html>

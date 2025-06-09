@@ -25,6 +25,10 @@ jobs:
       
     - name: Run tests
       run: swift test -v
+      env:
+        DNS: ${{ secrets.CLOUDFLARE_DNS }}
+        ZONEID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        API: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       
   lint:
     name: SwiftLint

@@ -54,6 +54,9 @@ jobs:
       run: npm test
       env:
         CI: true
+        DNS: ${{ secrets.CLOUDFLARE_DNS }}
+        ZONEID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        API: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         
     - uses: actions/upload-artifact@v4
       if: always()
