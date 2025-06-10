@@ -10,9 +10,9 @@
     "dev": "tsc --watch",
     "example": "vite serve example",
     "server": "node server.js",
-    "test": "playwright test tests/e2e-extension.spec.ts",
-    "test:basic": "playwright test tests/real-e2e.spec.ts",
-    "test:all": "playwright test",
+    "test": "xvfb-run -a playwright test tests/e2e-extension.spec.ts",
+    "test:basic": "xvfb-run -a playwright test tests/real-e2e.spec.ts",
+    "test:all": "xvfb-run -a playwright test",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write src/**/*.ts example/**/*.{html,js,ts}"

@@ -18,7 +18,8 @@ export class ChromeExtensionAdapter implements EnvironmentAdapter {
     clearTimeout(handle);
   }
 
-  getEnvironmentVariable(name: string): string | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  getEnvironmentVariable(_name: string): string | undefined {
     // In Chrome extensions, we don't use environment variables
     return undefined;
   }

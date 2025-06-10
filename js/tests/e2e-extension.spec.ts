@@ -32,9 +32,6 @@ const test = base.extend({
 test.describe('P2P2 Extension E2E Tests', () => {
   test.skip(!process.env.DNS || !process.env.ZONEID || !process.env.API,
     'Requires DNS, ZONEID, and API environment variables');
-  
-  test.skip(!!process.env.CI,
-    'Chrome extensions require headed mode - skipping in CI');
 
   test('should establish real P2P connection via extension', async ({ context }) => {
     test.setTimeout(60000);

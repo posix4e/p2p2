@@ -57,16 +57,17 @@ export class NodeAdapter implements EnvironmentAdapter {
   }
 }
 
+// Import ChromeExtensionAdapter for use in createDefaultAdapter
+import { ChromeExtensionAdapter } from './ChromeExtensionAdapter';
+
 // Export ChromeExtensionAdapter from separate file
-export { ChromeExtensionAdapter } from './ChromeExtensionAdapter';
+export { ChromeExtensionAdapter };
 
 // Auto-detect environment
 export function createDefaultAdapter(): EnvironmentAdapter {
   if (typeof window !== 'undefined') {
     // Check if in Chrome extension
     if (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.storage) {
-      // Import at runtime to avoid circular dependencies  
-      const { ChromeExtensionAdapter } = require('./ChromeExtensionAdapter');
       return new ChromeExtensionAdapter();
     }
     return new BrowserAdapter();
