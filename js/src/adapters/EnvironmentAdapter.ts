@@ -7,33 +7,6 @@ export interface EnvironmentAdapter {
   getEnvironmentVariable(name: string): string | undefined;
 }
 
-// Browser environment adapter
-export class BrowserAdapter implements EnvironmentAdapter {
-  setInterval(callback: () => void, ms: number): any {
-    return window.setInterval(callback, ms);
-  }
-  
-  clearInterval(handle: any): void {
-    window.clearInterval(handle);
-  }
-  
-  setTimeout(callback: () => void, ms: number): any {
-    return window.setTimeout(callback, ms);
-  }
-  
-  clearTimeout(handle: any): void {
-    window.clearTimeout(handle);
-  }
-  
-  getEnvironmentVariable(name: string): string | undefined {
-    // In browser, check window.ENV or meta tags
-    if (typeof window !== 'undefined' && (window as any).ENV) {
-      return (window as any).ENV[name];
-    }
-    return undefined;
-  }
-}
-
 // Node.js environment adapter
 export class NodeAdapter implements EnvironmentAdapter {
   setInterval(callback: () => void, ms: number): any {
@@ -67,10 +40,10 @@ export { ChromeExtensionAdapter };
 export function createDefaultAdapter(): EnvironmentAdapter {
   if (typeof window !== 'undefined') {
     // Check if in Chrome extension
-    if (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.storage) {
+    if (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.runtime) {
       return new ChromeExtensionAdapter();
     }
-    return new BrowserAdapter();
+    throw new Error('P2P2 requires Chrome extension environment. Regular browser context is not supported due to CORS restrictions.');
   } else if (typeof process !== 'undefined' && process.env) {
     return new NodeAdapter();
   }

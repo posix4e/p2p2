@@ -4,7 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-P2P2 is a cross-platform peer-to-peer communication library that uses DNS TXT records for peer discovery and WebRTC for data transfer. It has implementations in Swift (for iOS/macOS) and TypeScript/JavaScript (for web/Node.js).
+P2P2 is a peer-to-peer communication library that uses DNS TXT records for peer discovery and WebRTC for data transfer. It has two separate implementations for different extension platforms:
+
+- **Swift**: Native implementation for Safari extensions on iOS/macOS
+  - Runs entirely in the extension's native process (no JavaScript)
+  - Optimized for battery efficiency
+  - Background sync by default
+  
+- **JavaScript**: For Chrome/Firefox extensions
+  - Runs in service workers for background persistence
+  - Routes DNS API calls through background script to bypass CORS
+  - Chrome implemented, Firefox planned
+
+Regular browser contexts are not supported - extensions only.
 
 ## Essential Commands
 
@@ -54,10 +66,11 @@ The library consists of these key components across both platforms:
 3. **WebRTCManager**: Handles WebRTC peer connections and data channels
 4. **P2P2Room**: High-level API for room-based multi-peer communication
 
-The JavaScript implementation includes environment adapters:
-- `NodeAdapter`: Node.js runtime support
-- `BrowserAdapter`: Browser runtime support  
-- `ChromeExtensionAdapter`: Chrome extension with CORS bypass
+The JavaScript implementation uses environment adapters:
+- `ChromeExtensionAdapter`: Chrome extension environment (primary target)
+- `NodeAdapter`: Node.js runtime (development/testing only)
+
+Browser contexts are explicitly not supported - the library will throw an error if used outside of an extension environment.
 
 ## Key Implementation Details
 

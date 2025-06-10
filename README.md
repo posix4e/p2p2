@@ -1,6 +1,6 @@
 # P2P2
 
-A peer-to-peer communication library using Cloudflare DNS for peer discovery and WebRTC for data transfer. Available for both Swift and JavaScript/TypeScript.
+A peer-to-peer communication library using Cloudflare DNS for peer discovery and WebRTC for data transfer. Designed for browser extensions that can bypass CORS restrictions.
 
 [![Swift](https://github.com/posix4e/p2p2/actions/workflows/swift.yml/badge.svg)](https://github.com/posix4e/p2p2/actions/workflows/swift.yml)
 [![JavaScript](https://github.com/posix4e/p2p2/actions/workflows/javascript.yml/badge.svg)](https://github.com/posix4e/p2p2/actions/workflows/javascript.yml)
@@ -10,10 +10,11 @@ A peer-to-peer communication library using Cloudflare DNS for peer discovery and
 - 🌐 **DNS-based peer discovery** using Cloudflare DNS API
 - 🔗 **WebRTC data channels** for direct peer-to-peer communication
 - 🔒 **No signaling server required** - uses DNS records for signaling
-- 📱 **Swift support** for iOS/macOS applications
-- 🌏 **JavaScript/TypeScript support** for web and Node.js
-- 🧩 **Chrome Extension support** with CORS bypass architecture
+- 📱 **Safari Extension support** (Swift) - runs WebRTC in background on iOS/macOS
+- 🧩 **Chrome Extension support** (JavaScript) - bypasses CORS restrictions
+- 🦊 **Firefox Extension support** (JavaScript) - planned
 - ⚡ **Simple API** for room-based communication
+- 🚫 **No regular browser support** - extensions only due to CORS
 
 ## Installation
 
@@ -35,17 +36,22 @@ npm install p2p2
 
 ## Quick Start
 
-### JavaScript/TypeScript
+### Chrome Extension (JavaScript/TypeScript)
 
 ```typescript
-import { P2P2 } from 'p2p2';
+import { P2P2, ChromeExtensionAdapter } from 'p2p2';
 
-// Create a room
+// In your Chrome extension - config stored in chrome.storage
+const room = await P2P2.createRoomForChromeExtension('room-name');
+
+// Or with explicit config
 const room = P2P2.joinRoom({
   domain: 'your-domain.com',
   zoneId: 'your-cloudflare-zone-id',
   apiToken: 'your-cloudflare-api-token'
-}, 'room-name');
+}, 'room-name', {
+  adapter: new ChromeExtensionAdapter()
+});
 
 // Set up event handlers
 room.onPeerJoin((peerId) => {
@@ -63,12 +69,12 @@ await room.join();
 room.send('Hello peers!');
 ```
 
-### Swift
+### Safari Extension (Swift)
 
 ```swift
 import P2P2
 
-// Create configuration
+// In your Safari extension
 let config = RoomConfig(
     domain: "your-domain.com",
     zoneId: "your-cloudflare-zone-id", 
@@ -92,17 +98,21 @@ room.onData { data, peerId in
 }
 ```
 
-## Chrome Extension Usage
+## Extension Architecture
 
-P2P2 includes special support for Chrome extensions to bypass CORS restrictions:
+P2P2 has two separate implementations optimized for different platforms:
 
-```javascript
-// In your Chrome extension
-const room = await P2P2.createRoomForChromeExtension('room-name');
-await room.join();
-```
+### Safari Extensions (Swift)
+- Uses native Swift implementation for optimal battery efficiency on iOS/macOS
+- Runs WebRTC in the extension's native background process
+- No JavaScript involved - pure Swift for better performance
 
-The extension architecture routes API calls through the background script, eliminating CORS issues.
+### Chrome/Firefox Extensions (JavaScript)
+- Uses JavaScript implementation with service workers
+- Routes DNS API calls through background script to bypass CORS
+- Runs persistently in background for continuous sync
+
+**Important**: This is an extension-only library. Regular web pages cannot use P2P2 due to CORS restrictions. Background operation is the default - any UI is only for testing/debugging.
 
 ## Environment Variables
 
@@ -148,8 +158,8 @@ swift test
 
 ### Platform Requirements
 
-- **Swift**: iOS 13.0+ / macOS 10.15+
-- **JavaScript**: Modern browsers with WebRTC support, Node.js 18+
+- **Swift**: iOS 13.0+ / macOS 10.15+ (Safari Extension)
+- **JavaScript**: Chrome/Firefox extensions only, Node.js 18+ (for development)
 
 ## License
 
