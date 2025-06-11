@@ -31,8 +31,9 @@ async function initP2P(roomId) {
   }
 }
 
-// Listen for messages from the service worker
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+// Register P2P message listener
+window.__p2p2MessageListeners = window.__p2p2MessageListeners || [];
+window.__p2p2MessageListeners.push((message) => {
   if (message.type === 'peerJoined') {
     console.log('Peer joined:', message.peerId);
     peers.add(message.peerId);

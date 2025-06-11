@@ -60,9 +60,18 @@ test.describe('P2P2 Multi-Peer Extension Tests', () => {
     console.log(`Browser 1: ${workers1.length} service worker(s)`);
     console.log(`Browser 2: ${workers2.length} service worker(s)`);
     
+    // Enable console logging for both pages
+    const setupLogging = (page, name) => {
+      page.on('console', msg => console.log(`[${name}]`, msg.text()));
+      page.on('pageerror', err => console.error(`[${name} Error]`, err));
+    };
+    
     // Get extension pages
     const ext1 = await browser1.newPage();
     const ext2 = await browser2.newPage();
+    
+    setupLogging(ext1, 'Browser1');
+    setupLogging(ext2, 'Browser2');
     
     // Navigate to extension test pages
     const extensionId1 = await getExtensionId(ext1);
@@ -73,15 +82,33 @@ test.describe('P2P2 Multi-Peer Extension Tests', () => {
     
     if (extensionId1 && extensionId2) {
       // Navigate to test pages within each extension
-      await ext1.goto(`chrome-extension://${extensionId1}/test-page.html`);
-      await ext2.goto(`chrome-extension://${extensionId2}/test-page.html`);
+      await ext1.goto(`chrome-extension://${extensionId1}/dist/test-page.html`);
+      await ext2.goto(`chrome-extension://${extensionId2}/dist/test-page.html`);
+      
+      // Wait for pages to fully load
+      await ext1.waitForLoadState('networkidle');
+      await ext2.waitForLoadState('networkidle');
       
       // Initialize P2P with the same room ID
       const roomId = 'test-room-' + Date.now();
       
+      // Wait for initP2P to be available
+      await ext1.waitForFunction(() => typeof window.initP2P === 'function', { timeout: 10000 });
+      await ext2.waitForFunction(() => typeof window.initP2P === 'function', { timeout: 10000 });
+      
       console.log('Initializing P2P in browser 1...');
       const result1 = await ext1.evaluate(async (roomId) => {
-        return await window.initP2P(roomId);
+        try {
+          // First test direct chrome API
+          const config = await chrome.runtime.sendMessage({ type: 'getConfig' });
+          console.log('Got config:', config);
+          
+          // Now try initP2P
+          return await window.initP2P(roomId);
+        } catch (error) {
+          console.error('Error in browser 1:', error.message);
+          throw error;
+        }
       }, roomId);
       
       console.log('Initializing P2P in browser 2...');

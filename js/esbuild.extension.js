@@ -26,6 +26,18 @@ async function build() {
       path.join(__dirname, 'test-extension/test-page.js'),
       path.join(__dirname, 'test-extension/dist/test-page.js')
     );
+    
+    // Copy test-page.html
+    fs.copyFileSync(
+      path.join(__dirname, 'test-extension/test-page.html'),
+      path.join(__dirname, 'test-extension/dist/test-page.html')
+    );
+    
+    // Copy content.js
+    fs.copyFileSync(
+      path.join(__dirname, 'test-extension/content.js'),
+      path.join(__dirname, 'test-extension/dist/content.js')
+    );
 
     console.log('✅ Extension built successfully with esbuild!');
   } catch (error) {
