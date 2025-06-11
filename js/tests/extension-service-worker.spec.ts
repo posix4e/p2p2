@@ -10,6 +10,8 @@ const test = base.extend({
   context: async ({ }, use) => {
     const pathToExtension = path.join(__dirname, '../test-extension');
     
+    console.log('Launching browser with extension from:', pathToExtension);
+    
     // Launch browser with extension
     const context = await chromium.launchPersistentContext('', {
       headless: false, // Extensions require headed mode
@@ -18,8 +20,11 @@ const test = base.extend({
         '--disable-setuid-sandbox',
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`
-      ]
+      ],
+      timeout: 60000 // Increase browser launch timeout
     });
+    
+    console.log('Browser context created');
     
     await use(context);
     await context.close();
