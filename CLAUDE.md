@@ -33,7 +33,7 @@ npm run typecheck  # Type checking
 npm run lint       # Run ESLint
 npm run format     # Run Prettier
 
-# Testing (Linux only)
+# Testing
 npm test           # Run extension tests
 npm test:headed    # Run tests with visible browser
 
@@ -82,9 +82,9 @@ Browser contexts are explicitly not supported - the library will throw an error 
 ## Testing Approach
 
 - Swift: Uses XCTest with async/await, tests real DNS/WebRTC connections
-- JavaScript: Playwright tests on Linux only (Chrome extension loading)
-  - Extensions require headed mode, use xvfb-run in CI
-  - Local development should be on Linux, not macOS
+- JavaScript: Playwright tests for Chrome extension loading
+  - CI runs tests with xvfb-run on Linux for headless execution
+  - Local development runs tests with headed mode (macOS/Linux)
   - Tests verify extension loads and service worker runs
 - Tests require Cloudflare API credentials (DNS, ZONEID, API env vars)
 

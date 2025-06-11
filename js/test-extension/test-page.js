@@ -6,10 +6,28 @@ let messages = [];
 
 async function initP2P(roomId) {
   try {
+    console.log('initP2P: Starting initialization for room', roomId);
+    
+    // Check if chrome.runtime is available
+    if (typeof chrome === 'undefined' || !chrome.runtime) {
+      throw new Error('Chrome runtime API not available');
+    }
+    
     // Send message to service worker to create/join room
-    const response = await chrome.runtime.sendMessage({
-      type: 'joinRoom',
-      roomId: roomId
+    console.log('initP2P: Sending joinRoom message to service worker');
+    const response = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({
+        type: 'joinRoom',
+        roomId: roomId
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('initP2P: Chrome runtime error:', chrome.runtime.lastError);
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          console.log('initP2P: Received response from service worker:', response);
+          resolve(response);
+        }
+      });
     });
     
     if (response.error) {

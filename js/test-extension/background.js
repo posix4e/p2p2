@@ -12,6 +12,8 @@ let currentRoom = null;
 let connectedTabs = new Set();
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('Background: Received message', request.type);
+  
   if (request.type === 'fetch') {
     console.log('Background: Handling fetch to', request.url);
     handleFetch(request.url, request.options)
@@ -24,15 +26,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.type === 'getConfig') {
+    console.log('Background: Sending config');
     sendResponse(CONFIG);
     return false;
   }
   
   if (request.type === 'joinRoom') {
+    console.log('Background: Joining room', request.roomId);
     handleJoinRoom(request.roomId, sender.tab?.id)
-      .then(response => sendResponse(response))
+      .then(response => {
+        console.log('Background: Join room success', response);
+        sendResponse(response);
+      })
       .catch(error => {
-        console.error('Join room error:', error);
+        console.error('Background: Join room error:', error);
         sendResponse({ error: error.message });
       });
     return true;
@@ -47,6 +54,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     return false;
   }
+  
+  console.log('Background: Unknown message type', request.type);
+  return false;
 });
 
 async function handleJoinRoom(roomId, tabId) {
