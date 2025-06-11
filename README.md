@@ -133,8 +133,10 @@ ROOMID=default-room-name
 cd js
 npm install
 npm run build
-npm test
+npm test       # Linux only - tests Chrome extension loading
 ```
+
+**Note**: JavaScript tests must run on Linux, not macOS. The tests use Playwright to load the Chrome extension, which requires headed mode. In CI, this is handled with xvfb-run.
 
 ### Swift
 
@@ -159,7 +161,8 @@ swift test
 ### Platform Requirements
 
 - **Swift**: iOS 13.0+ / macOS 10.15+ (Safari Extension)
-- **JavaScript**: Chrome/Firefox extensions only, Node.js 18+ (for development)
+- **JavaScript**: Chrome/Firefox extensions only, Node.js 20+ (for development)
+- **Testing**: Linux required for JavaScript tests (Playwright + Chrome extensions)
 
 ## License
 

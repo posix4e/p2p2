@@ -33,10 +33,9 @@ npm run typecheck  # Type checking
 npm run lint       # Run ESLint
 npm run format     # Run Prettier
 
-# Testing
-npm test           # Chrome extension E2E tests
-npm test:basic     # Basic E2E tests  
-npm test:all       # All Playwright tests
+# Testing (Linux only)
+npm test           # Run extension tests
+npm test:headed    # Run tests with visible browser
 
 # Examples
 npm run example    # Web chat example (Vite)
@@ -83,8 +82,10 @@ Browser contexts are explicitly not supported - the library will throw an error 
 ## Testing Approach
 
 - Swift: Uses XCTest with async/await, tests real DNS/WebRTC connections
-- JavaScript: Playwright E2E tests including Chrome extension loading
-- Both platforms test multi-peer scenarios
+- JavaScript: Playwright tests on Linux only (Chrome extension loading)
+  - Extensions require headed mode, use xvfb-run in CI
+  - Local development should be on Linux, not macOS
+  - Tests verify extension loads and service worker runs
 - Tests require Cloudflare API credentials (DNS, ZONEID, API env vars)
 
 ## Environment Variables
