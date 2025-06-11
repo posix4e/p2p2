@@ -1,6 +1,6 @@
 
 // Background service worker for E2E tests
-import { P2P2, ChromeExtensionAdapter } from '../../dist/index.js';
+import { P2P2, ChromeExtensionAdapter } from '../dist/index.js';
 
 const CONFIG = {
   domain: 'newman.family',

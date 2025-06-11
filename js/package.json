@@ -7,6 +7,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
+    "build:extension": "npm run build && node esbuild.extension.js",
     "dev": "tsc --watch",
     "example": "vite serve example",
     "server": "node server.js",
