@@ -18,6 +18,9 @@ const test = base.extend({
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage', // Overcome limited resource problems
+        '--disable-gpu', // Disable GPU hardware acceleration
+        '--disable-software-rasterizer',
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`
       ],
