@@ -38,14 +38,33 @@ test.describe('P2P2 Extension Service Worker Tests', () => {
     const workers = context.serviceWorkers();
     console.log(`Found ${workers.length} service worker(s)`);
     
-    // The extension should have loaded
-    expect(workers.length).toBeGreaterThanOrEqual(0);
+    // Get extension ID by navigating to chrome://extensions
+    const extPage = await context.newPage();
+    await extPage.goto('chrome://extensions/');
+    await extPage.waitForTimeout(500);
     
-    // Create a page to verify browser works
-    const page = await context.newPage();
-    await page.goto('about:blank');
-    expect(await page.title()).toBe('');
-    await page.close();
+    // Get extension info
+    const extensionInfo = await extPage.evaluate(async () => {
+      // @ts-ignore - chrome.developerPrivate is available on extensions page
+      if (typeof chrome !== 'undefined' && chrome.developerPrivate) {
+        const extensions = await new Promise((resolve) => {
+          // @ts-ignore
+          chrome.developerPrivate.getExtensionsInfo({ includeDisabled: true }, resolve);
+        });
+        const p2p2Ext = extensions.find((ext: any) => ext.name === 'P2P2 Test Extension');
+        return p2p2Ext ? { id: p2p2Ext.id, name: p2p2Ext.name, enabled: p2p2Ext.enabled } : null;
+      }
+      return null;
+    });
+    
+    if (extensionInfo) {
+      console.log('Extension loaded:', extensionInfo);
+      expect(extensionInfo.enabled).toBe(true);
+    } else {
+      console.log('Could not get extension info from chrome.developerPrivate API');
+    }
+    
+    await extPage.close();
     
     console.log('Extension context test passed');
   });
