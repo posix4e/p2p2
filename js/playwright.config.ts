@@ -19,16 +19,4 @@ export default defineConfig({
     },
   ],
 
-  webServer: [
-    {
-      command: 'npm run example',
-      port: 5173,
-      reuseExistingServer: true,
-    },
-    {
-      command: 'node test-extension-server.js',
-      port: 8080,
-      reuseExistingServer: true,
-    }
-  ],
 });
