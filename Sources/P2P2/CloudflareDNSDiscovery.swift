@@ -29,15 +29,32 @@ public actor CloudflareDNSDiscovery {
         )
         
         try await createDNSRecord(record)
-        activeRecords.insert(record.id ?? "")
     }
     
     func removePresence(roomId: String) async throws {
         // Delete all our active records
         for recordId in activeRecords {
-            try await deleteDNSRecord(recordId)
+            do {
+                try await deleteDNSRecord(recordId)
+            } catch {
+                // Log but continue with other deletions
+                print("Warning: Failed to delete record \(recordId): \(error)")
+            }
         }
         activeRecords.removeAll()
+        
+        // Also clean up any stale records for our peer ID
+        let recordName = "_p2p2-\(roomId)-peer-\(peerId)"
+        let records = try await listDNSRecords(name: recordName)
+        for record in records {
+            if let recordId = record.id {
+                do {
+                    try await deleteDNSRecord(recordId)
+                } catch {
+                    print("Warning: Failed to delete stale record \(recordId): \(error)")
+                }
+            }
+        }
     }
     
     func discoverPeers(roomId: String) async throws -> [String] {
@@ -65,7 +82,6 @@ public actor CloudflareDNSDiscovery {
         )
         
         try await createDNSRecord(record)
-        activeRecords.insert(record.id ?? "")
     }
     
     func getSignalingData(roomId: String, fromPeerId: String) async throws -> String? {
@@ -95,8 +111,9 @@ public actor CloudflareDNSDiscovery {
         
         // Parse response to get record ID
         if let result = try? JSONDecoder().decode(CloudflareResponse<DNSRecord>.self, from: data),
-           let createdRecord = result.result {
-            activeRecords.insert(createdRecord.id ?? "")
+           let createdRecord = result.result,
+           let recordId = createdRecord.id {
+            activeRecords.insert(recordId)
         }
     }
     
@@ -131,17 +148,26 @@ public actor CloudflareDNSDiscovery {
     }
     
     private func deleteDNSRecord(_ recordId: String) async throws {
+        guard !recordId.isEmpty else {
+            // Skip empty record IDs
+            return
+        }
+        
         let url = URL(string: "https://api.cloudflare.com/client/v4/zones/\(zoneId)/dns_records/\(recordId)")!
         
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         
-        let (_, response) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
         
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw P2P2Error.dnsError("Failed to delete DNS record")
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw P2P2Error.dnsError("Failed to delete DNS record \(recordId): Invalid response")
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "No error body"
+            throw P2P2Error.dnsError("Failed to delete DNS record \(recordId): HTTP \(httpResponse.statusCode), \(errorBody)")
         }
     }
 }
