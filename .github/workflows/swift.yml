@@ -17,11 +17,16 @@ jobs:
     - name: Swift version
       run: swift --version
       
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 'lts/*'
+      
     - name: Build
-      run: swift build -v
+      run: npm run build:swift
       
     - name: Run tests
-      run: swift test -v
+      run: npm run test:swift
       env:
         DNS: ${{ secrets.CLOUDFLARE_DNS }}
         ZONEID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
@@ -38,4 +43,4 @@ jobs:
       run: brew install swiftlint
       
     - name: Run SwiftLint
-      run: swiftlint lint --strict
+      run: npm run lint:swift

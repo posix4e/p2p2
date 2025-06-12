@@ -12,9 +12,7 @@ on:
       - 'js/**'
       - '.github/workflows/javascript.yml'
 
-defaults:
-  run:
-    working-directory: js
+# No defaults needed - commands run from root
 
 jobs:
   test:
@@ -27,16 +25,16 @@ jobs:
       uses: actions/setup-node@v4
       with:
         cache: 'npm'
-        cache-dependency-path: js/package-lock.json
+        cache-dependency-path: package-lock.json
         
     - name: Install dependencies
       run: npm ci
       
-    - name: Build
-      run: npm run build
+    - name: Build extension files
+      run: npm run build:extension
       
     - name: Lint
-      run: npm run lint
+      run: npm run lint:js
       
     - name: Type check
       run: npm run typecheck
@@ -52,7 +50,7 @@ jobs:
     - name: Run Playwright tests
       run: |
         echo "Running tests with xvfb-run"
-        xvfb-run -a --server-args="-screen 0 1280x1024x24" npm test -- --reporter=line
+        xvfb-run -a --server-args="-screen 0 1280x1024x24" npm run test:js -- --reporter=line
       env:
         DNS: ${{ secrets.CLOUDFLARE_DNS }}
         ZONEID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
