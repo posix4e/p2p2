@@ -50,7 +50,7 @@ jobs:
     - name: Run Playwright tests
       run: |
         echo "Running tests with xvfb-run"
-        xvfb-run -a --server-args="-screen 0 1280x1024x24" npm run test:js -- --reporter=line
+        xvfb-run -a --server-args="-screen 0 1280x1024x24" npm run test:js:all -- --reporter=line
       env:
         DNS: ${{ secrets.CLOUDFLARE_DNS }}
         ZONEID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
