@@ -135,26 +135,64 @@ public final class WebRTCManager: @unchecked Sendable {
     }
     
     func waitForIceGathering(_ connection: RTCPeerConnection) async {
+        let waiter = IceGatheringWaiter()
+        await waiter.wait(for: connection)
+    }
+}
+
+// Actor to manage ICE gathering state
+private actor IceGatheringWaiter {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var hasCompleted = false
+    
+    func wait(for connection: RTCPeerConnection) async {
         if connection.iceGatheringState == .complete {
             return
         }
         
         await withCheckedContinuation { continuation in
-            let observer = IceGatheringObserver(connection: connection) { _ in
-                continuation.resume()
+            self.continuation = continuation
+            
+            // Start timeout
+            Task {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                await self.complete(timedOut: true)
             }
-            observer.startObserving()
+            
+            // Start observing
+            Task { @MainActor in
+                let observer = IceGatheringObserver(connection: connection) { [weak self] in
+                    Task {
+                        await self?.complete(timedOut: false)
+                    }
+                }
+                observer.startObserving()
+            }
         }
+    }
+    
+    private func complete(timedOut: Bool) {
+        guard !hasCompleted, let continuation = continuation else { return }
+        hasCompleted = true
+        self.continuation = nil
+        
+        if timedOut {
+            print("ICE gathering timeout reached")
+        } else {
+            print("ICE gathering completed")
+        }
+        
+        continuation.resume()
     }
 }
 
 // Helper class to observe ICE gathering state
-private class IceGatheringObserver: NSObject, @unchecked Sendable {
+private class IceGatheringObserver: NSObject {
     private weak var connection: RTCPeerConnection?
-    private let completion: (RTCPeerConnection) -> Void
+    private let completion: () -> Void
     private var observation: NSKeyValueObservation?
     
-    init(connection: RTCPeerConnection, completion: @escaping (RTCPeerConnection) -> Void) {
+    init(connection: RTCPeerConnection, completion: @escaping () -> Void) {
         self.connection = connection
         self.completion = completion
         super.init()
@@ -163,14 +201,14 @@ private class IceGatheringObserver: NSObject, @unchecked Sendable {
     func startObserving() {
         // Check if already complete
         if connection?.iceGatheringState == .complete {
-            completion(connection!)
+            completion()
             return
         }
         
         // Use KVO to observe iceGatheringState changes
         observation = connection?.observe(\.iceGatheringState, options: [.new]) { [weak self] connection, _ in
             if connection.iceGatheringState == .complete {
-                self?.completion(connection)
+                self?.completion()
                 self?.observation?.invalidate()
             }
         }
