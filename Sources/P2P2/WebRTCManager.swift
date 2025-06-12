@@ -133,4 +133,46 @@ public final class WebRTCManager: @unchecked Sendable {
             }
         }
     }
+    
+    func waitForIceGathering(_ connection: RTCPeerConnection) async {
+        if connection.iceGatheringState == .complete {
+            return
+        }
+        
+        await withCheckedContinuation { continuation in
+            let observer = IceGatheringObserver(connection: connection) { _ in
+                continuation.resume()
+            }
+            observer.startObserving()
+        }
+    }
+}
+
+// Helper class to observe ICE gathering state
+private class IceGatheringObserver: NSObject, @unchecked Sendable {
+    private weak var connection: RTCPeerConnection?
+    private let completion: (RTCPeerConnection) -> Void
+    private var observation: NSKeyValueObservation?
+    
+    init(connection: RTCPeerConnection, completion: @escaping (RTCPeerConnection) -> Void) {
+        self.connection = connection
+        self.completion = completion
+        super.init()
+    }
+    
+    func startObserving() {
+        // Check if already complete
+        if connection?.iceGatheringState == .complete {
+            completion(connection!)
+            return
+        }
+        
+        // Use KVO to observe iceGatheringState changes
+        observation = connection?.observe(\.iceGatheringState, options: [.new]) { [weak self] connection, _ in
+            if connection.iceGatheringState == .complete {
+                self?.completion(connection)
+                self?.observation?.invalidate()
+            }
+        }
+    }
 }

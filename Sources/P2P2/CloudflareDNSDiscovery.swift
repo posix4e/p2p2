@@ -59,10 +59,27 @@ public actor CloudflareDNSDiscovery {
     
     func discoverPeers(roomId: String) async throws -> [String] {
         let prefix = "_p2p2-\(roomId)-peer-"
-        let records = try await listDNSRecords(prefix: prefix)
+        // Use type filter and then filter by prefix
+        var urlComponents = URLComponents(string: "https://api.cloudflare.com/client/v4/zones/\(zoneId)/dns_records")!
+        urlComponents.queryItems = [
+            URLQueryItem(name: "type", value: "TXT"),
+            URLQueryItem(name: "per_page", value: "100")
+        ]
         
-        return records
-            .filter { $0.type == "TXT" && $0.name.hasPrefix(prefix) }
+        var request = URLRequest(url: urlComponents.url!)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw P2P2Error.dnsError("Failed to list DNS records")
+        }
+        
+        let result = try JSONDecoder().decode(CloudflareListResponse<DNSRecord>.self, from: data)
+        
+        return result.result
+            .filter { $0.name.hasPrefix("\(prefix)") && $0.name.contains(".\(domain)") }
             .compactMap { $0.content }
             .filter { $0 != peerId } // Exclude ourselves
     }
@@ -104,9 +121,13 @@ public actor CloudflareDNSDiscovery {
         
         let (data, response) = try await session.data(for: request)
         
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw P2P2Error.dnsError("Failed to create DNS record")
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw P2P2Error.dnsError("Failed to create DNS record: Invalid response")
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "No error body"
+            throw P2P2Error.dnsError("Failed to create DNS record: HTTP \(httpResponse.statusCode), \(errorBody)")
         }
         
         // Parse response to get record ID
@@ -125,8 +146,9 @@ public actor CloudflareDNSDiscovery {
             queryItems.append(URLQueryItem(name: "name", value: "\(name).\(domain)"))
         }
         if let prefix = prefix {
+            // For prefix search, we need to search with the domain appended
             queryItems.append(URLQueryItem(name: "name", value: "\(prefix)"))
-            queryItems.append(URLQueryItem(name: "match", value: "prefix"))
+            queryItems.append(URLQueryItem(name: "match", value: "all"))
         }
         
         if !queryItems.isEmpty {
