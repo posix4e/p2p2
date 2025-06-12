@@ -50,28 +50,39 @@ jobs:
         export DISPLAY=:99
         echo "DISPLAY set to: $DISPLAY"
         
-        # Start Xvfb with verbose output
-        Xvfb :99 -screen 0 1280x1024x24 &
+        # Install xvfb if not present
+        sudo apt-get update
+        sudo apt-get install -y xvfb x11-utils
+        
+        # Start Xvfb in background
+        Xvfb :99 -screen 0 1280x1024x24 -ac +extension GLX +render -noreset &
         XVFB_PID=$!
         echo "Xvfb started with PID: $XVFB_PID"
         
-        # Wait and verify Xvfb is running
-        sleep 3
-        if ps -p $XVFB_PID > /dev/null; then
-          echo "✓ Xvfb is running"
-        else
-          echo "✗ Xvfb failed to start"
-          exit 1
-        fi
+        # Wait for Xvfb to fully start
+        echo "Waiting for Xvfb to initialize..."
+        for i in {1..30}; do
+          if xdpyinfo -display :99 >/dev/null 2>&1; then
+            echo "✓ Display :99 is accessible after $i seconds"
+            break
+          fi
+          if [ $i -eq 30 ]; then
+            echo "✗ Display :99 is not accessible after 30 seconds"
+            ps aux | grep Xvfb
+            echo "Checking if Xvfb process is still running..."
+            if ps -p $XVFB_PID > /dev/null; then
+              echo "Xvfb process is running but display not accessible"
+            else
+              echo "Xvfb process has died"
+            fi
+            exit 1
+          fi
+          sleep 1
+        done
         
-        # Verify display is accessible
-        if xdpyinfo -display :99 >/dev/null 2>&1; then
-          echo "✓ Display :99 is accessible"
-          xdpyinfo -display :99 | head -20
-        else
-          echo "✗ Display :99 is not accessible"
-          exit 1
-        fi
+        # Show display info
+        echo "Display information:"
+        xdpyinfo -display :99 | head -20
       
     - name: Run Playwright tests
       run: |
