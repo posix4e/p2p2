@@ -2,7 +2,7 @@ import Foundation
 @preconcurrency import WebRTC
 
 /// Core P2P functionality that can be used in any Swift environment
-public class P2P2Core {
+public final class P2P2Core {
     public let dnsDiscovery: CloudflareDNSDiscovery
     public let webRTCManager: WebRTCManager
     
