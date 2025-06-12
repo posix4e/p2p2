@@ -38,7 +38,13 @@ test.describe('P2P2 Extension Service Worker Tests', () => {
   test.skip(!process.env.DNS || !process.env.ZONEID || !process.env.API,
     'Requires DNS, ZONEID, and API environment variables');
 
-  test('extension loads successfully', async ({ context }) => {
+  test('extension loads successfully', async ({ context }, testInfo) => {
+    // Add screenshot on failure
+    test.info().attachments.push({
+      name: 'test-started',
+      contentType: 'text/plain',
+      body: Buffer.from(`Test started at ${new Date().toISOString()}\nDisplay: ${process.env.DISPLAY}`)
+    });
     // Verify the extension loaded by checking the context
     expect(context).toBeDefined();
     
@@ -48,36 +54,59 @@ test.describe('P2P2 Extension Service Worker Tests', () => {
     
     // Get extension ID by navigating to chrome://extensions
     const extPage = await context.newPage();
-    await extPage.goto('chrome://extensions/');
-    await extPage.waitForTimeout(500);
     
-    // Get extension info
-    const extensionInfo = await extPage.evaluate(async () => {
-      // @ts-ignore - chrome.developerPrivate is available on extensions page
-      if (typeof chrome !== 'undefined' && chrome.developerPrivate) {
-        const extensions = await new Promise((resolve) => {
-          // @ts-ignore
-          chrome.developerPrivate.getExtensionsInfo({ includeDisabled: true }, resolve);
-        });
-        const p2p2Ext = extensions.find((ext: any) => ext.name === 'P2P2 Test Extension');
-        return p2p2Ext ? { id: p2p2Ext.id, name: p2p2Ext.name, enabled: p2p2Ext.enabled } : null;
+    try {
+      await extPage.goto('chrome://extensions/');
+      await extPage.waitForTimeout(500);
+      
+      // Take screenshot for debugging
+      await testInfo.attach('extensions-page', {
+        body: await extPage.screenshot(),
+        contentType: 'image/png'
+      });
+      
+      // Get extension info
+      const extensionInfo = await extPage.evaluate(async () => {
+        // @ts-ignore - chrome.developerPrivate is available on extensions page
+        if (typeof chrome !== 'undefined' && chrome.developerPrivate) {
+          const extensions = await new Promise((resolve) => {
+            // @ts-ignore
+            chrome.developerPrivate.getExtensionsInfo({ includeDisabled: true }, resolve);
+          });
+          const p2p2Ext = extensions.find((ext: any) => ext.name === 'P2P2 Test Extension');
+          return p2p2Ext ? { id: p2p2Ext.id, name: p2p2Ext.name, enabled: p2p2Ext.enabled } : null;
+        }
+        return null;
+      });
+      
+      if (extensionInfo) {
+        console.log('Extension loaded:', extensionInfo);
+        console.log('Extension ID:', extensionInfo.id);
+        expect(extensionInfo.id).toBeTruthy();
+        expect(extensionInfo.name).toBe('P2P2 Test Extension');
+        // Note: enabled property might not be available in all Chrome versions
+      } else {
+        console.log('Could not get extension info from chrome.developerPrivate API');
+        // Still pass if we have service workers
+        expect(workers.length).toBeGreaterThan(0);
       }
-      return null;
-    });
-    
-    if (extensionInfo) {
-      console.log('Extension loaded:', extensionInfo);
-      console.log('Extension ID:', extensionInfo.id);
-      expect(extensionInfo.id).toBeTruthy();
-      expect(extensionInfo.name).toBe('P2P2 Test Extension');
-      // Note: enabled property might not be available in all Chrome versions
-    } else {
-      console.log('Could not get extension info from chrome.developerPrivate API');
-      // Still pass if we have service workers
-      expect(workers.length).toBeGreaterThan(0);
+    } catch (error) {
+      // Capture screenshot on error
+      await testInfo.attach('error-screenshot', {
+        body: await extPage.screenshot({ fullPage: true }),
+        contentType: 'image/png'
+      });
+      
+      // Attach error details
+      await testInfo.attach('error-details', {
+        body: Buffer.from(`Error: ${error}\nDisplay: ${process.env.DISPLAY}`),
+        contentType: 'text/plain'
+      });
+      
+      throw error;
+    } finally {
+      await extPage.close();
     }
-    
-    await extPage.close();
     
     console.log('Extension context test passed');
   });

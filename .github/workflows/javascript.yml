@@ -44,17 +44,45 @@ jobs:
     - name: Install Playwright browsers
       run: npx playwright install --with-deps chromium
       
+    - name: Setup virtual display
+      run: |
+        echo "Starting Xvfb setup..."
+        export DISPLAY=:99
+        echo "DISPLAY set to: $DISPLAY"
+        
+        # Start Xvfb with verbose output
+        Xvfb :99 -screen 0 1280x1024x24 &
+        XVFB_PID=$!
+        echo "Xvfb started with PID: $XVFB_PID"
+        
+        # Wait and verify Xvfb is running
+        sleep 3
+        if ps -p $XVFB_PID > /dev/null; then
+          echo "✓ Xvfb is running"
+        else
+          echo "✗ Xvfb failed to start"
+          exit 1
+        fi
+        
+        # Verify display is accessible
+        if xdpyinfo -display :99 >/dev/null 2>&1; then
+          echo "✓ Display :99 is accessible"
+          xdpyinfo -display :99 | head -20
+        else
+          echo "✗ Display :99 is not accessible"
+          exit 1
+        fi
+      
     - name: Run Playwright tests
       run: |
-        export DISPLAY=:99
-        Xvfb :99 -screen 0 1280x1024x24 > /dev/null 2>&1 &
-        sleep 3
-        npm test
+        echo "Running tests with DISPLAY=$DISPLAY"
+        npm test -- --reporter=line
       env:
         DNS: ${{ secrets.CLOUDFLARE_DNS }}
         ZONEID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
         API: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         DISPLAY: :99
+        DEBUG: pw:browser*,pw:protocol
         
     - uses: actions/upload-artifact@v4
       if: always()
