@@ -14,7 +14,9 @@ public actor CloudflareDNSDiscovery {
         self.zoneId = zoneId
         self.apiToken = apiToken
         self.session = URLSession.shared
-        self.peerId = UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
+        // Match JavaScript's 16-character peer ID limit
+        let fullId = UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
+        self.peerId = String(fullId.prefix(16))
     }
     
     func announcePresence(roomId: String) async throws {
@@ -85,28 +87,55 @@ public actor CloudflareDNSDiscovery {
     }
     
     func publishSignalingData(roomId: String, peerId: String, data: String) async throws {
+        // Match JavaScript naming convention
         let recordName = "_p2p2-\(roomId)-sig-\(self.peerId)-to-\(peerId)"
         
-        // Chunk data if needed (TXT records have 255 char limit per string)
-        let chunks = data.chunks(ofCount: 255)
-        let content = chunks.map { String($0) }.joined(separator: "")
+        // First, delete any existing record with this name
+        let existingRecords = try await listDNSRecords(name: recordName)
+        for record in existingRecords {
+            if let recordId = record.id {
+                try? await deleteDNSRecord(recordId)
+            }
+        }
         
+        // For now, just store the data as-is and let Cloudflare handle it
+        // Cloudflare will automatically split long TXT records into multiple strings
         let record = DNSRecord(
             type: "TXT",
             name: recordName,
-            content: content,
-            ttl: 30 // Short TTL for signaling
+            content: data,
+            ttl: 60 // Minimum TTL allowed by Cloudflare
         )
         
         try await createDNSRecord(record)
     }
     
     func getSignalingData(roomId: String, fromPeerId: String) async throws -> String? {
+        // Match JavaScript naming convention
         let recordName = "_p2p2-\(roomId)-sig-\(fromPeerId)-to-\(peerId)"
         let records = try await listDNSRecords(name: recordName)
         
-        return records.first?.content
+        if let record = records.first {
+            // Cloudflare may return multi-string TXT records as a single string with quotes
+            // or it may already be concatenated. Let's handle both cases.
+            var content = record.content
+            
+            // If the content starts and ends with quotes, it might be a quoted string
+            if content.hasPrefix("\"") && content.hasSuffix("\"") {
+                content = String(content.dropFirst().dropLast())
+            }
+            
+            // Handle escaped quotes
+            content = content.replacingOccurrences(of: "\\\"", with: "\"")
+            
+            return content
+        }
+        
+        return nil
     }
+    
+    // Removed ICE candidate methods - JavaScript waits for ICE gathering to complete
+    // and includes all candidates in the SDP before sending
     
     // MARK: - Cloudflare API
     

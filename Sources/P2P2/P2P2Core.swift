@@ -51,6 +51,9 @@ public final class P2P2Core: @unchecked Sendable {
         )
     }
     
+    // Removed ICE candidate methods - JavaScript implementation waits for ICE gathering
+    // to complete and includes all candidates in the SDP before sending
+    
     // MARK: - WebRTC Operations
     
     public func createPeerConnection() async throws -> RTCPeerConnection {

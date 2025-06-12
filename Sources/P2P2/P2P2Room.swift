@@ -124,6 +124,18 @@ public actor P2P2Room: Sendable {
     private func connectAsInitiator(to peerId: String) async throws {
         print("[\(self.peerId)] Connecting as initiator to \(peerId)")
         let connection = try await core.createPeerConnection()
+        
+        // Set up connection delegate to see ICE candidates
+        let delegate = PeerConnectionDelegateWrapper(
+            peerId: peerId,
+            onDataChannel: { [weak self] dataChannel in
+                Task { [weak self] in
+                    await self?.handleReceivedDataChannel(dataChannel, for: peerId)
+                }
+            }
+        )
+        connection.delegate = delegate
+        
         let dataChannelConfig = RTCDataChannelConfiguration()
         dataChannelConfig.isOrdered = true
         dataChannelConfig.maxRetransmits = 3
@@ -143,7 +155,7 @@ public actor P2P2Room: Sendable {
             dataChannel: dataChannel,
             isConnected: false,
             connectionObserver: observer,
-            dataChannelDelegate: nil,
+            dataChannelDelegate: delegate,
             dataChannelObserver: nil
         )
         
@@ -152,19 +164,33 @@ public actor P2P2Room: Sendable {
         // Set up data channel handlers
         setupDataChannel(dataChannel, for: peerId)
         
-        // Create offer and wait for ICE gathering
+        // Create offer
         print("[\(self.peerId)] Creating offer for \(peerId)")
         let offer = try await core.createOffer(for: connection)
         try await core.setLocalDescription(offer, for: connection)
-        print("[\(self.peerId)] Waiting for ICE gathering")
-        await core.webRTCManager.waitForIceGathering(connection)
+        print("[\(self.peerId)] Set local description, ICE gathering state: \(connection.iceGatheringState.rawValue)")
         
-        // Exchange signaling data via DNS TXT records
+        // Wait for ICE gathering to complete (matching JavaScript implementation)
+        print("[\(self.peerId)] Waiting for ICE gathering to complete...")
+        await core.webRTCManager.waitForIceGathering(connection)
+        print("[\(self.peerId)] ICE gathering complete")
+        
+        // Serialize offer to JSON format matching JavaScript
+        let offerData: [String: Any] = [
+            "type": "offer",
+            "sdp": offer.sdp
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: offerData),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            throw P2P2Error.signalingFailed("Failed to serialize offer")
+        }
+        
         print("[\(self.peerId)] Publishing offer to \(peerId)")
         try await core.publishSignalingData(
             roomId: roomId,
             targetPeerId: peerId,
-            data: offer.sdp
+            data: jsonString
         )
         
         // Poll for answer with retries
@@ -193,8 +219,25 @@ public actor P2P2Room: Sendable {
                     roomId: roomId,
                     fromPeerId: peerId
                 ) {
-                    let answer = RTCSessionDescription(type: .answer, sdp: answerData)
+                    print("[\(self.peerId)] Got answer from \(peerId), length: \(answerData.count)")
+                    
+                    // Parse JSON format from JavaScript
+                    guard let data = answerData.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let sdp = json["sdp"] as? String,
+                          let type = json["type"] as? String,
+                          type == "answer" else {
+                        print("[\(self.peerId)] Failed to parse answer JSON")
+                        attempts += 1
+                        continue
+                    }
+                    
+                    let answer = RTCSessionDescription(type: .answer, sdp: sdp)
+                    print("[\(self.peerId)] Created answer RTCSessionDescription")
+                    print("[\(self.peerId)] Answer SDP length: \(answer.sdp.count)")
                     try await core.setRemoteDescription(answer, for: connection)
+                    
+                    // No need to poll for ICE candidates - they're included in the SDP
                     return
                 }
             } catch {
@@ -235,11 +278,14 @@ public actor P2P2Room: Sendable {
         // Set up data channel handler
         let capturedSelf = self
         let capturedPeerId = peerId
-        let delegate = PeerConnectionDelegateWrapper(peerId: peerId) { dataChannel in
-            Task {
-                await capturedSelf.handleReceivedDataChannel(dataChannel, for: capturedPeerId)
+        let delegate = PeerConnectionDelegateWrapper(
+            peerId: peerId,
+            onDataChannel: { dataChannel in
+                Task {
+                    await capturedSelf.handleReceivedDataChannel(dataChannel, for: capturedPeerId)
+                }
             }
-        }
+        )
         connection.delegate = delegate
         peer.dataChannelDelegate = delegate
         
@@ -259,20 +305,57 @@ public actor P2P2Room: Sendable {
                     roomId: roomId,
                     fromPeerId: peerId
                 ) {
-                    let offer = RTCSessionDescription(type: .offer, sdp: offerData)
+                    print("[\(self.peerId)] Got offer from \(peerId), length: \(offerData.count)")
+                    guard !offerData.isEmpty else {
+                        print("[\(self.peerId)] Empty offer data from \(peerId)")
+                        continue
+                    }
+                    
+                    // Parse JSON format from JavaScript
+                    guard let data = offerData.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let sdp = json["sdp"] as? String,
+                          let type = json["type"] as? String,
+                          type == "offer" else {
+                        print("[\(self.peerId)] Failed to parse offer JSON")
+                        attempts += 1
+                        continue
+                    }
+                    
+                    let offer = RTCSessionDescription(type: .offer, sdp: sdp)
+                    print("[\(self.peerId)] Created RTCSessionDescription")
+                    print("[\(self.peerId)] Offer SDP length: \(offer.sdp.count)")
+                    
                     try await core.setRemoteDescription(offer, for: connection)
                     
-                    // Create answer and wait for ICE gathering
+                    // Create answer
                     let answer = try await core.createAnswer(for: connection)
                     try await core.setLocalDescription(answer, for: connection)
-                    await core.webRTCManager.waitForIceGathering(connection)
+                    print("[\(self.peerId)] Set local description for answer, ICE gathering state: \(connection.iceGatheringState.rawValue)")
                     
-                    // Send answer
+                    // Wait for ICE gathering to complete (matching JavaScript implementation)
+                    print("[\(self.peerId)] Waiting for ICE gathering to complete...")
+                    await core.webRTCManager.waitForIceGathering(connection)
+                    print("[\(self.peerId)] ICE gathering complete")
+                    
+                    // Serialize answer to JSON format matching JavaScript
+                    let answerData: [String: Any] = [
+                        "type": "answer",
+                        "sdp": answer.sdp
+                    ]
+                    
+                    guard let jsonData = try? JSONSerialization.data(withJSONObject: answerData),
+                          let jsonString = String(data: jsonData, encoding: .utf8) else {
+                        throw P2P2Error.signalingFailed("Failed to serialize answer")
+                    }
+                    
                     try await core.publishSignalingData(
                         roomId: roomId,
                         targetPeerId: peerId,
-                        data: answer.sdp
+                        data: jsonString
                     )
+                    
+                    // No need to poll for ICE candidates - they're included in the SDP
                     return
                 }
             } catch {
@@ -343,6 +426,9 @@ public actor P2P2Room: Sendable {
         peers[peerId] = peer
         setupDataChannel(dataChannel, for: peerId)
     }
+    
+    // Removed ICE candidate polling - JavaScript implementation waits for ICE gathering
+    // to complete and includes all candidates in the SDP before sending
 }
 
 // Helper class to observe data channel events
@@ -394,7 +480,8 @@ fileprivate class PeerConnectionDelegateWrapper: NSObject, RTCPeerConnectionDele
     private let peerId: String
     private let onDataChannel: @Sendable (RTCDataChannel) -> Void
     
-    init(peerId: String, onDataChannel: @escaping @Sendable (RTCDataChannel) -> Void) {
+    init(peerId: String, 
+         onDataChannel: @escaping @Sendable (RTCDataChannel) -> Void) {
         self.peerId = peerId
         self.onDataChannel = onDataChannel
         super.init()
@@ -404,9 +491,13 @@ fileprivate class PeerConnectionDelegateWrapper: NSObject, RTCPeerConnectionDele
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
+        print("[\(peerId)] ICE connection state changed to: \(newState.rawValue)")
+    }
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
+        // ICE candidates are included in SDP after gathering completes
+    }
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {

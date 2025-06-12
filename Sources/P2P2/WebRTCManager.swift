@@ -58,6 +58,14 @@ public final class WebRTCManager: @unchecked Sendable {
         config.tcpCandidatePolicy = .enabled
         config.continualGatheringPolicy = .gatherContinually
         config.sdpSemantics = .unifiedPlan
+        config.iceTransportPolicy = .all
+        config.candidateNetworkPolicy = .all
+        
+        // Add more aggressive ICE gathering for local testing
+        config.iceCandidatePoolSize = 10
+        config.audioJitterBufferMaxPackets = 50
+        config.iceConnectionReceivingTimeout = 10000
+        config.iceBackupCandidatePairPingInterval = 1000
         
         guard let connection = Self.factory.peerConnection(
             with: config,
