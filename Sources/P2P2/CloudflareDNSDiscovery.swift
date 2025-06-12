@@ -13,10 +13,22 @@ public actor CloudflareDNSDiscovery {
         self.domain = domain
         self.zoneId = zoneId
         self.apiToken = apiToken
-        self.session = URLSession.shared
+        
+        // Create a custom URLSession configuration to handle network issues better
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 60
+        configuration.waitsForConnectivity = true
+        self.session = URLSession(configuration: configuration)
+        
         // Match JavaScript's 16-character peer ID limit
         let fullId = UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
         self.peerId = String(fullId.prefix(16))
+    }
+    
+    deinit {
+        // Finish ongoing tasks gracefully before invalidating
+        session.finishTasksAndInvalidate()
     }
     
     func announcePresence(roomId: String) async throws {
@@ -134,8 +146,54 @@ public actor CloudflareDNSDiscovery {
         return nil
     }
     
-    // Removed ICE candidate methods - JavaScript waits for ICE gathering to complete
-    // and includes all candidates in the SDP before sending
+    func publishIceCandidate(roomId: String, peerId: String, candidate: String, index: Int) async throws {
+        // Use shortened names to avoid DNS length limits
+        let recordName = "_p2p2-ice-\(String(roomId.prefix(8)))-\(String(self.peerId.prefix(8)))-\(String(peerId.prefix(8)))-\(index)"
+        
+        let record = DNSRecord(
+            type: "TXT",
+            name: recordName,
+            content: candidate,
+            ttl: 60
+        )
+        
+        try await createDNSRecord(record)
+    }
+    
+    func getIceCandidates(roomId: String, fromPeerId: String) async throws -> [String] {
+        let prefix = "_p2p2-ice-\(String(roomId.prefix(8)))-\(String(fromPeerId.prefix(8)))-\(String(peerId.prefix(8)))-"
+        
+        var urlComponents = URLComponents(string: "https://api.cloudflare.com/client/v4/zones/\(zoneId)/dns_records")!
+        urlComponents.queryItems = [
+            URLQueryItem(name: "type", value: "TXT"),
+            URLQueryItem(name: "per_page", value: "100")
+        ]
+        
+        var request = URLRequest(url: urlComponents.url!)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw P2P2Error.dnsError("Failed to list ICE candidate records")
+        }
+        
+        let result = try JSONDecoder().decode(CloudflareListResponse<DNSRecord>.self, from: data)
+        
+        return result.result
+            .filter { $0.name.hasPrefix("\(prefix)") && $0.name.contains(".\(domain)") }
+            .compactMap { record -> (index: Int, content: String)? in
+                let parts = record.name.split(separator: "-")
+                if let indexStr = parts.last?.split(separator: ".").first,
+                   let index = Int(indexStr) {
+                    return (index, record.content)
+                }
+                return nil
+            }
+            .sorted { $0.index < $1.index }
+            .map { $0.content }
+    }
     
     // MARK: - Cloudflare API
     

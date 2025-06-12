@@ -69,6 +69,12 @@ final class E2ETests: XCTestCase {
         // Clean up
         try await peer1.leave()
         try await peer2.leave()
+        
+        // Give time for cleanup
+        try await Task.sleep(nanoseconds: 500_000_000) // 500ms
+        
+        // Clean up WebRTC
+        WebRTCManager.cleanup()
     }
     
     func testMultiplePeers() async throws {
@@ -109,5 +115,11 @@ final class E2ETests: XCTestCase {
         for peer in peers {
             try await peer.leave()
         }
+        
+        // Give time for cleanup
+        try await Task.sleep(nanoseconds: 500_000_000) // 500ms
+        
+        // Clean up WebRTC
+        WebRTCManager.cleanup()
     }
 }

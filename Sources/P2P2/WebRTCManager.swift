@@ -4,13 +4,13 @@ import Foundation
 public final class WebRTCManager: @unchecked Sendable {
     nonisolated(unsafe) private static let factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
-        let videoEncoderFactory = RTCDefaultVideoEncoderFactory()
-        let videoDecoderFactory = RTCDefaultVideoDecoderFactory()
-        return RTCPeerConnectionFactory(
-            encoderFactory: videoEncoderFactory,
-            decoderFactory: videoDecoderFactory
-        )
+        // For data-channel only, we don't need video encoders/decoders
+        return RTCPeerConnectionFactory()
     }()
+    
+    public static func cleanup() {
+        RTCCleanupSSL()
+    }
     
     private let iceServers: [RTCIceServer]
     private let constraints: RTCMediaConstraints
@@ -58,14 +58,19 @@ public final class WebRTCManager: @unchecked Sendable {
         config.tcpCandidatePolicy = .enabled
         config.continualGatheringPolicy = .gatherContinually
         config.sdpSemantics = .unifiedPlan
-        config.iceTransportPolicy = .all
+        // For local testing, use only host candidates to avoid waiting for STUN
+        config.iceTransportPolicy = .all // Change to .relay to use only TURN
         config.candidateNetworkPolicy = .all
+        
         
         // Add more aggressive ICE gathering for local testing
         config.iceCandidatePoolSize = 10
         config.audioJitterBufferMaxPackets = 50
         config.iceConnectionReceivingTimeout = 10000
         config.iceBackupCandidatePairPingInterval = 1000
+        
+        // For data-channel only connections, we might need this
+        config.activeResetSrtpParams = true
         
         guard let connection = Self.factory.peerConnection(
             with: config,
@@ -74,6 +79,8 @@ public final class WebRTCManager: @unchecked Sendable {
         ) else {
             throw P2P2Error.connectionFailed("Failed to create peer connection")
         }
+        
+        print("[WebRTCManager] Created peer connection with \(config.iceServers.count) ICE servers")
         
         return connection
     }
@@ -112,6 +119,9 @@ public final class WebRTCManager: @unchecked Sendable {
                 if let error = error {
                     continuation.resume(throwing: P2P2Error.signalingFailed(error.localizedDescription))
                 } else {
+                    print("[WebRTCManager] Set local description, ICE gathering state: \(connection.iceGatheringState.rawValue)")
+                    print("[WebRTCManager] ICE connection state: \(connection.iceConnectionState.rawValue)")
+                    print("[WebRTCManager] Signaling state: \(connection.signalingState.rawValue)")
                     continuation.resume()
                 }
             }
@@ -143,6 +153,28 @@ public final class WebRTCManager: @unchecked Sendable {
     }
     
     func waitForIceGathering(_ connection: RTCPeerConnection) async {
+        print("[WebRTCManager] Starting ICE gathering wait. Current state: \(connection.iceGatheringState.rawValue)")
+        print("[WebRTCManager] Connection state: \(connection.connectionState.rawValue)")
+        print("[WebRTCManager] Signaling state: \(connection.signalingState.rawValue)")
+        
+        // Give a small delay for ICE gathering to start
+        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        
+        // Check if we're already complete or if gathering started
+        if connection.iceGatheringState == .complete {
+            print("[WebRTCManager] ICE gathering already complete")
+            return
+        }
+        
+        // Try to restart ICE gathering if it hasn't started
+        if connection.iceGatheringState == .new {
+            print("[WebRTCManager] ICE gathering hasn't started, trying to restart ICE")
+            connection.restartIce()
+            try? await Task.sleep(nanoseconds: 100_000_000) // Give it time to start
+        }
+        
+        // For data-channel only connections, ICE gathering might not start
+        // until answer is set. We'll wait with a timeout.
         let waiter = IceGatheringWaiter()
         await waiter.wait(for: connection)
     }
@@ -161,9 +193,9 @@ private actor IceGatheringWaiter {
         await withCheckedContinuation { continuation in
             self.continuation = continuation
             
-            // Start timeout
+            // Start timeout - 2 seconds should be enough for local candidates
             Task {
-                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
                 await self.complete(timedOut: true)
             }
             
@@ -214,11 +246,22 @@ private class IceGatheringObserver: NSObject {
         }
         
         // Use KVO to observe iceGatheringState changes
-        observation = connection?.observe(\.iceGatheringState, options: [.new]) { [weak self] connection, _ in
-            if connection.iceGatheringState == .complete {
+        observation = connection?.observe(\.iceGatheringState, options: [.new, .initial]) { [weak self] connection, change in
+            let state = connection.iceGatheringState
+            print("[IceGatheringObserver] ICE gathering state changed to: \(state.rawValue) (\(self?.stateString(for: state) ?? "unknown"))")
+            if state == .complete {
                 self?.completion()
                 self?.observation?.invalidate()
             }
+        }
+    }
+    
+    private func stateString(for state: RTCIceGatheringState) -> String {
+        switch state {
+        case .new: return "new"
+        case .gathering: return "gathering"
+        case .complete: return "complete"
+        @unknown default: return "unknown"
         }
     }
 }

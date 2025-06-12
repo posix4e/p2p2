@@ -10,6 +10,8 @@ public actor P2P2Room: Sendable {
     private var onPeerJoinHandler: (@Sendable (String) -> Void)?
     private var onPeerLeaveHandler: (@Sendable (String) -> Void)?
     private var onDataHandler: (@Sendable (Data, String) -> Void)?
+    private var iceCandidateCounter: [String: Int] = [:]
+    private var discoveryTask: Task<Void, Error>?
     
     struct Peer {
         let id: String
@@ -37,7 +39,7 @@ public actor P2P2Room: Sendable {
         print("[\(peerId)] Announced presence in room: \(roomId)")
         
         // Start discovery loop
-        Task {
+        discoveryTask = Task {
             print("[\(peerId)] Starting discovery loop")
             while !Task.isCancelled {
                 do {
@@ -51,13 +53,23 @@ public actor P2P2Room: Sendable {
     }
     
     public func leave() async throws {
-        try await core.removePresence(roomId: roomId)
+        // Cancel discovery task first
+        discoveryTask?.cancel()
+        discoveryTask = nil
         
-        // Close all peer connections
+        // Close all peer connections before removing presence
         for peer in peers.values {
+            peer.dataChannel?.close()
             peer.connection.close()
         }
         peers.removeAll()
+        iceCandidateCounter.removeAll()
+        
+        // Give connections time to close gracefully
+        try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        
+        // Remove presence last
+        try await core.removePresence(roomId: roomId)
     }
     
     public func send(_ data: Data) throws {
@@ -132,6 +144,11 @@ public actor P2P2Room: Sendable {
                 Task { [weak self] in
                     await self?.handleReceivedDataChannel(dataChannel, for: peerId)
                 }
+            },
+            onIceCandidate: { [weak self] candidate in
+                Task { [weak self] in
+                    await self?.publishIceCandidate(candidate, for: peerId)
+                }
             }
         )
         connection.delegate = delegate
@@ -175,10 +192,21 @@ public actor P2P2Room: Sendable {
         await core.webRTCManager.waitForIceGathering(connection)
         print("[\(self.peerId)] ICE gathering complete")
         
+        // Get the updated local description with ICE candidates
+        guard let updatedOffer = connection.localDescription else {
+            throw P2P2Error.signalingFailed("No local description after ICE gathering")
+        }
+        
+        // Debug: Check if candidates are in the SDP
+        print("[\(self.peerId)] Updated SDP contains candidates: \(updatedOffer.sdp.contains("a=candidate"))")
+        if !updatedOffer.sdp.contains("a=candidate") {
+            print("[\(self.peerId)] WARNING: No ICE candidates in SDP after gathering!")
+        }
+        
         // Serialize offer to JSON format matching JavaScript
         let offerData: [String: Any] = [
             "type": "offer",
-            "sdp": offer.sdp
+            "sdp": updatedOffer.sdp
         ]
         
         guard let jsonData = try? JSONSerialization.data(withJSONObject: offerData),
@@ -213,7 +241,7 @@ public actor P2P2Room: Sendable {
         let maxAttempts = 10
         var attempts = 0
         
-        while attempts < maxAttempts {
+        while attempts < maxAttempts && !Task.isCancelled {
             do {
                 if let answerData = try await core.getSignalingData(
                     roomId: roomId,
@@ -237,7 +265,11 @@ public actor P2P2Room: Sendable {
                     print("[\(self.peerId)] Answer SDP length: \(answer.sdp.count)")
                     try await core.setRemoteDescription(answer, for: connection)
                     
-                    // No need to poll for ICE candidates - they're included in the SDP
+                    // Start polling for ICE candidates
+                    Task {
+                        await pollForIceCandidates(from: peerId, connection: connection)
+                    }
+                    
                     return
                 }
             } catch {
@@ -245,11 +277,15 @@ public actor P2P2Room: Sendable {
             }
             
             attempts += 1
-            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+            if !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+            }
         }
         
         // Failed to get answer
-        removePeer(peerId)
+        if !Task.isCancelled {
+            removePeer(peerId)
+        }
     }
     
     private func waitForConnectionFrom(_ peerId: String) async throws {
@@ -284,6 +320,11 @@ public actor P2P2Room: Sendable {
                 Task {
                     await capturedSelf.handleReceivedDataChannel(dataChannel, for: capturedPeerId)
                 }
+            },
+            onIceCandidate: { candidate in
+                Task {
+                    await capturedSelf.publishIceCandidate(candidate, for: capturedPeerId)
+                }
             }
         )
         connection.delegate = delegate
@@ -299,7 +340,7 @@ public actor P2P2Room: Sendable {
         let maxAttempts = 10
         var attempts = 0
         
-        while attempts < maxAttempts {
+        while attempts < maxAttempts && !Task.isCancelled {
             do {
                 if let offerData = try await core.getSignalingData(
                     roomId: roomId,
@@ -338,10 +379,15 @@ public actor P2P2Room: Sendable {
                     await core.webRTCManager.waitForIceGathering(connection)
                     print("[\(self.peerId)] ICE gathering complete")
                     
+                    // Get the updated local description with ICE candidates
+                    guard let updatedAnswer = connection.localDescription else {
+                        throw P2P2Error.signalingFailed("No local description after ICE gathering")
+                    }
+                    
                     // Serialize answer to JSON format matching JavaScript
                     let answerData: [String: Any] = [
                         "type": "answer",
-                        "sdp": answer.sdp
+                        "sdp": updatedAnswer.sdp
                     ]
                     
                     guard let jsonData = try? JSONSerialization.data(withJSONObject: answerData),
@@ -355,7 +401,11 @@ public actor P2P2Room: Sendable {
                         data: jsonString
                     )
                     
-                    // No need to poll for ICE candidates - they're included in the SDP
+                    // Start polling for ICE candidates
+                    Task {
+                        await pollForIceCandidates(from: peerId, connection: connection)
+                    }
+                    
                     return
                 }
             } catch {
@@ -363,11 +413,15 @@ public actor P2P2Room: Sendable {
             }
             
             attempts += 1
-            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+            if !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+            }
         }
         
         // Failed to get offer
-        removePeer(peerId)
+        if !Task.isCancelled {
+            removePeer(peerId)
+        }
     }
     
     private func handleConnectionStateChange(for peerId: String, state: RTCPeerConnectionState) async {
@@ -427,8 +481,62 @@ public actor P2P2Room: Sendable {
         setupDataChannel(dataChannel, for: peerId)
     }
     
-    // Removed ICE candidate polling - JavaScript implementation waits for ICE gathering
-    // to complete and includes all candidates in the SDP before sending
+    private func incrementIceCandidateCounter(for peerId: String) {
+        iceCandidateCounter[peerId] = (iceCandidateCounter[peerId] ?? 0) + 1
+    }
+    
+    private func publishIceCandidate(_ candidate: RTCIceCandidate, for peerId: String) async {
+        let counter = iceCandidateCounter[peerId] ?? 0
+        incrementIceCandidateCounter(for: peerId)
+        
+        do {
+            try await core.publishIceCandidate(
+                roomId: roomId,
+                targetPeerId: peerId,
+                candidate: candidate,
+                index: counter
+            )
+            print("[\(self.peerId)] Published ICE candidate #\(counter) to \(peerId)")
+        } catch {
+            print("[\(self.peerId)] Failed to publish ICE candidate: \(error)")
+        }
+    }
+    
+    private func pollForIceCandidates(from peerId: String, connection: RTCPeerConnection) async {
+        var knownCandidates = Set<String>()
+        let maxPolls = 10
+        var polls = 0
+        
+        while polls < maxPolls && !Task.isCancelled {
+            do {
+                let candidates = try await core.getIceCandidates(roomId: roomId, fromPeerId: peerId)
+                
+                if !candidates.isEmpty {
+                    print("[\(self.peerId)] Found \(candidates.count) ICE candidates from \(peerId)")
+                }
+                
+                for candidate in candidates {
+                    let candidateKey = "\(candidate.sdpMLineIndex)-\(candidate.sdp)"
+                    if !knownCandidates.contains(candidateKey) {
+                        knownCandidates.insert(candidateKey)
+                        do {
+                            try await core.addIceCandidate(candidate, to: connection)
+                            print("[\(self.peerId)] Added ICE candidate from \(peerId): \(candidate.sdp)")
+                        } catch {
+                            print("[\(self.peerId)] Failed to add ICE candidate: \(error)")
+                        }
+                    }
+                }
+            } catch {
+                // Ignore errors, keep polling
+            }
+            
+            polls += 1
+            if !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+            }
+        }
+    }
 }
 
 // Helper class to observe data channel events
@@ -479,11 +587,14 @@ fileprivate class ConnectionStateObserver: NSObject, @unchecked Sendable {
 fileprivate class PeerConnectionDelegateWrapper: NSObject, RTCPeerConnectionDelegate, @unchecked Sendable {
     private let peerId: String
     private let onDataChannel: @Sendable (RTCDataChannel) -> Void
+    private let onIceCandidate: @Sendable (RTCIceCandidate) -> Void
     
     init(peerId: String, 
-         onDataChannel: @escaping @Sendable (RTCDataChannel) -> Void) {
+         onDataChannel: @escaping @Sendable (RTCDataChannel) -> Void,
+         onIceCandidate: @escaping @Sendable (RTCIceCandidate) -> Void) {
         self.peerId = peerId
         self.onDataChannel = onDataChannel
+        self.onIceCandidate = onIceCandidate
         super.init()
     }
     
@@ -494,9 +605,13 @@ fileprivate class PeerConnectionDelegateWrapper: NSObject, RTCPeerConnectionDele
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
         print("[\(peerId)] ICE connection state changed to: \(newState.rawValue)")
     }
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
+        print("[\(peerId)] ICE gathering state changed to: \(newState.rawValue)")
+    }
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
-        // ICE candidates are included in SDP after gathering completes
+        print("[\(peerId)] Generated ICE candidate: \(candidate.sdp)")
+        // Send ICE candidates via trickle ICE
+        onIceCandidate(candidate)
     }
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     
