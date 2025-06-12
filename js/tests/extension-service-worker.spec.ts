@@ -13,21 +13,49 @@ const test = base.extend({
     console.log('Launching browser with extension from:', pathToExtension);
     
     // Launch browser with extension
-    const context = await chromium.launchPersistentContext('', {
-      headless: false, // Extensions require headed mode
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-zygote', // Disable zygote process
-        '--no-first-run',
-        '--disable-features=ChromeWhatsNewUI',
-        `--disable-extensions-except=${pathToExtension}`,
-        `--load-extension=${pathToExtension}`
-      ],
-      timeout: 120000 // Increase browser launch timeout to 2 minutes
-    });
+    const args = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-zygote', // Disable zygote process
+      '--no-first-run',
+      '--disable-features=ChromeWhatsNewUI',
+      `--disable-extensions-except=${pathToExtension}`,
+      `--load-extension=${pathToExtension}`
+    ];
+    
+    // Add CI-specific flags
+    if (process.env.CI) {
+      args.push(
+        '--disable-dbus', // Prevent D-Bus errors in CI
+        '--disable-software-rasterizer',
+        '--disable-accelerated-2d-canvas',
+        '--disable-blink-features=AutomationControlled'
+      );
+    }
+    
+    let context;
+    let retries = 3;
+    
+    while (retries > 0) {
+      try {
+        context = await chromium.launchPersistentContext('', {
+          headless: false, // Extensions require headed mode
+          args,
+          timeout: 120000 // Increase browser launch timeout to 2 minutes
+        });
+        break;
+      } catch (error) {
+        retries--;
+        console.error(`Failed to launch browser (${3 - retries}/3):`, error.message);
+        if (retries === 0) {
+          throw error;
+        }
+        console.log(`Retrying in 5 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+    }
     
     console.log('Browser context created');
     
