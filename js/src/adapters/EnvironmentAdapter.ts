@@ -12,19 +12,19 @@ export class NodeAdapter implements EnvironmentAdapter {
   setInterval(callback: () => void, ms: number): any {
     return setInterval(callback, ms);
   }
-  
+
   clearInterval(handle: any): void {
     clearInterval(handle);
   }
-  
+
   setTimeout(callback: () => void, ms: number): any {
     return setTimeout(callback, ms);
   }
-  
+
   clearTimeout(handle: any): void {
     clearTimeout(handle);
   }
-  
+
   getEnvironmentVariable(name: string): string | undefined {
     return process.env[name];
   }
@@ -43,7 +43,9 @@ export function createDefaultAdapter(): EnvironmentAdapter {
     if (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.runtime) {
       return new ChromeExtensionAdapter();
     }
-    throw new Error('P2P2 requires Chrome extension environment. Regular browser context is not supported due to CORS restrictions.');
+    throw new Error(
+      'P2P2 requires Chrome extension environment. Regular browser context is not supported due to CORS restrictions.'
+    );
   } else if (typeof process !== 'undefined' && process.env) {
     return new NodeAdapter();
   }

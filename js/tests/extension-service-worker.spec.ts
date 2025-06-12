@@ -1,13 +1,15 @@
-import { test as base, chromium, expect } from '@playwright/test';
+import { test, chromium, expect } from '@playwright/test';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Test that loads extension and verifies it works
-const test = base.extend({
-  context: async ({ }, use) => {
+test.describe('P2P2 Extension Service Worker Tests', () => {
+  test.skip(!process.env.DNS || !process.env.ZONEID || !process.env.API,
+    'Requires DNS, ZONEID, and API environment variables');
+
+  test('extension loads successfully', async ({ }, testInfo) => {
     const pathToExtension = path.join(__dirname, '../test-extension');
     
     console.log('Launching browser with extension from:', pathToExtension);
@@ -59,16 +61,6 @@ const test = base.extend({
     
     console.log('Browser context created');
     
-    await use(context);
-    await context.close();
-  }
-});
-
-test.describe('P2P2 Extension Service Worker Tests', () => {
-  test.skip(!process.env.DNS || !process.env.ZONEID || !process.env.API,
-    'Requires DNS, ZONEID, and API environment variables');
-
-  test('extension loads successfully', async ({ context }, testInfo) => {
     // Add debug info
     console.log('Test environment:', {
       display: process.env.DISPLAY,
@@ -122,5 +114,8 @@ test.describe('P2P2 Extension Service Worker Tests', () => {
     }
     
     console.log('Extension context test passed');
+    
+    // Clean up
+    await context.close();
   });
 });

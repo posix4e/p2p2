@@ -29,17 +29,17 @@ class ChatApp {
   async initializeRoom() {
     try {
       this.updateStatus('Loading configuration...', 'connecting');
-      
+
       // Fetch config from server
       const response = await fetch('/api/config');
       const config = await response.json();
       window.ENV = config;
-      
+
       this.updateStatus('Connecting to room...', 'connecting');
-      
+
       // Create room from environment
       this.room = P2P2.createRoomFromEnvironment();
-      
+
       // Display room info
       this.roomIdEl.textContent = window.ENV.ROOMID;
       this.peerIdEl.textContent = this.room.getPeerId().substring(0, 8);
@@ -64,12 +64,11 @@ class ChatApp {
 
       // Join the room
       await this.room.join();
-      
+
       this.updateStatus('Connected! Waiting for peers...', 'connected');
       this.messageInput.disabled = false;
       this.sendButton.disabled = false;
       this.messageInput.focus();
-
     } catch (error) {
       console.error('Failed to initialize room:', error);
       this.updateStatus(`Error: ${error.message}`, 'error');
@@ -83,14 +82,13 @@ class ChatApp {
     try {
       // Send message to all peers
       this.room.send(message);
-      
+
       // Add to our own chat
       this.addMessage(message, 'You');
-      
+
       // Clear input
       this.messageInput.value = '';
       this.messageInput.focus();
-      
     } catch (error) {
       console.error('Failed to send message:', error);
       this.addSystemMessage(`Failed to send message: ${error.message}`);
@@ -100,17 +98,17 @@ class ChatApp {
   addMessage(text, peerId) {
     const messageEl = document.createElement('div');
     messageEl.className = 'message';
-    
+
     const peerIdEl = document.createElement('div');
     peerIdEl.className = 'peer-id';
     peerIdEl.textContent = peerId === 'You' ? 'You' : peerId.substring(0, 8);
-    
+
     const textEl = document.createElement('div');
     textEl.textContent = text;
-    
+
     messageEl.appendChild(peerIdEl);
     messageEl.appendChild(textEl);
-    
+
     this.messagesEl.appendChild(messageEl);
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
   }
@@ -119,7 +117,7 @@ class ChatApp {
     const messageEl = document.createElement('div');
     messageEl.className = 'message system';
     messageEl.textContent = text;
-    
+
     this.messagesEl.appendChild(messageEl);
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
   }

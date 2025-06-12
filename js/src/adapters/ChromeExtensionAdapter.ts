@@ -31,31 +31,31 @@ export class ChromeExtensionAdapter implements EnvironmentAdapter {
         reject(new Error('Chrome runtime API not available'));
         return;
       }
-      
+
       chrome.runtime.sendMessage(
         {
           type: 'fetch',
           url,
-          options
+          options,
         },
         (response: any) => {
           if (chrome.runtime?.lastError) {
             reject(new Error(chrome.runtime.lastError.message));
             return;
           }
-          
+
           if (response?.error) {
             reject(new Error(response.error));
             return;
           }
-          
+
           // Create a Response-like object
           const fetchResponse = new Response(response.body, {
             status: response.status,
             statusText: response.statusText,
-            headers: response.headers
+            headers: response.headers,
           });
-          
+
           resolve(fetchResponse);
         }
       );
