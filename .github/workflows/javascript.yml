@@ -44,56 +44,19 @@ jobs:
     - name: Install Playwright browsers
       run: npx playwright install --with-deps chromium
       
-    - name: Setup virtual display
+    - name: Install display server dependencies
       run: |
-        echo "Starting Xvfb setup..."
-        export DISPLAY=:99
-        echo "DISPLAY set to: $DISPLAY"
-        
-        # Install xvfb if not present
         sudo apt-get update
-        sudo apt-get install -y xvfb x11-utils
-        
-        # Start Xvfb in background
-        Xvfb :99 -screen 0 1280x1024x24 -ac +extension GLX +render -noreset &
-        XVFB_PID=$!
-        echo "Xvfb started with PID: $XVFB_PID"
-        
-        # Wait for Xvfb to fully start
-        echo "Waiting for Xvfb to initialize..."
-        for i in {1..30}; do
-          if xdpyinfo -display :99 >/dev/null 2>&1; then
-            echo "✓ Display :99 is accessible after $i seconds"
-            break
-          fi
-          if [ $i -eq 30 ]; then
-            echo "✗ Display :99 is not accessible after 30 seconds"
-            ps aux | grep Xvfb
-            echo "Checking if Xvfb process is still running..."
-            if ps -p $XVFB_PID > /dev/null; then
-              echo "Xvfb process is running but display not accessible"
-            else
-              echo "Xvfb process has died"
-            fi
-            exit 1
-          fi
-          sleep 1
-        done
-        
-        # Show display info
-        echo "Display information:"
-        xdpyinfo -display :99 | head -20
+        sudo apt-get install -y xvfb
       
     - name: Run Playwright tests
       run: |
-        echo "Running tests with DISPLAY=$DISPLAY"
-        npm test -- --reporter=line
+        echo "Running tests with xvfb-run"
+        xvfb-run -a --server-args="-screen 0 1280x1024x24" npm test -- --reporter=line
       env:
         DNS: ${{ secrets.CLOUDFLARE_DNS }}
         ZONEID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
         API: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        DISPLAY: :99
-        DEBUG: pw:browser*,pw:protocol
         
     - uses: actions/upload-artifact@v4
       if: always()

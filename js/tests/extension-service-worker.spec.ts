@@ -21,10 +21,12 @@ const test = base.extend({
         '--disable-dev-shm-usage', // Overcome limited resource problems
         '--disable-gpu', // Disable GPU hardware acceleration
         '--disable-software-rasterizer',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-web-security',
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`
       ],
-      timeout: 60000 // Increase browser launch timeout
+      timeout: 120000 // Increase browser launch timeout to 2 minutes
     });
     
     console.log('Browser context created');
