@@ -16,7 +16,7 @@ let package = Package(
             targets: ["P2P2CLI"])
     ],
     dependencies: [
-        .package(url: "https://github.com/stasel/WebRTC", .exactItem("137.0.0"))
+        .package(url: "https://github.com/stasel/WebRTC", exact: "137.0.0")
     ],
     targets: [
         .target(

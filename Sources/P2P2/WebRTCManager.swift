@@ -2,15 +2,33 @@ import Foundation
 @preconcurrency import WebRTC
 
 public final class WebRTCManager: @unchecked Sendable {
-    nonisolated(unsafe) private static let factory: RTCPeerConnectionFactory = {
+    nonisolated(unsafe) private static var _factory: RTCPeerConnectionFactory?
+    private static let factoryLock = NSLock()
+    
+    nonisolated(unsafe) private static var factory: RTCPeerConnectionFactory {
+        factoryLock.lock()
+        defer { factoryLock.unlock() }
+        
+        if let existingFactory = _factory {
+            return existingFactory
+        }
+        
+        // Ignore SIGPIPE to prevent crashes when sockets are closed
+        signal(SIGPIPE, SIG_IGN)
         RTCInitializeSSL()
-        let videoEncoderFactory = RTCDefaultVideoEncoderFactory()
-        let videoDecoderFactory = RTCDefaultVideoDecoderFactory()
-        return RTCPeerConnectionFactory(
-            encoderFactory: videoEncoderFactory,
-            decoderFactory: videoDecoderFactory
-        )
-    }()
+        // For data-channel only, we don't need video encoders/decoders
+        let newFactory = RTCPeerConnectionFactory()
+        _factory = newFactory
+        return newFactory
+    }
+    
+    public static func cleanup() {
+        factoryLock.lock()
+        defer { factoryLock.unlock() }
+        
+        _factory = nil
+        RTCCleanupSSL()
+    }
     
     private let iceServers: [RTCIceServer]
     private let constraints: RTCMediaConstraints
@@ -53,11 +71,12 @@ public final class WebRTCManager: @unchecked Sendable {
     func createPeerConnection() async throws -> RTCPeerConnection {
         let config = RTCConfiguration()
         config.iceServers = iceServers
-        config.bundlePolicy = .balanced
-        config.rtcpMuxPolicy = .require
-        config.tcpCandidatePolicy = .enabled
-        config.continualGatheringPolicy = .gatherContinually
         config.sdpSemantics = .unifiedPlan
+        config.bundlePolicy = .maxBundle
+        config.rtcpMuxPolicy = .require
+        
+        // Certificate for DTLS
+        config.certificate = nil // Let WebRTC generate certificates
         
         guard let connection = Self.factory.peerConnection(
             with: config,
@@ -66,6 +85,8 @@ public final class WebRTCManager: @unchecked Sendable {
         ) else {
             throw P2P2Error.connectionFailed("Failed to create peer connection")
         }
+        
+        print("[WebRTCManager] Created peer connection with \(config.iceServers.count) ICE servers")
         
         return connection
     }
@@ -104,6 +125,9 @@ public final class WebRTCManager: @unchecked Sendable {
                 if let error = error {
                     continuation.resume(throwing: P2P2Error.signalingFailed(error.localizedDescription))
                 } else {
+                    print("[WebRTCManager] Set local description, ICE gathering state: \(connection.iceGatheringState.rawValue)")
+                    print("[WebRTCManager] ICE connection state: \(connection.iceConnectionState.rawValue)")
+                    print("[WebRTCManager] Signaling state: \(connection.signalingState.rawValue)")
                     continuation.resume()
                 }
             }
@@ -131,6 +155,119 @@ public final class WebRTCManager: @unchecked Sendable {
                     continuation.resume()
                 }
             }
+        }
+    }
+    
+    func waitForIceGathering(_ connection: RTCPeerConnection) async {
+        print("[WebRTCManager] Starting ICE gathering wait. Current state: \(connection.iceGatheringState.rawValue)")
+        print("[WebRTCManager] Connection state: \(connection.connectionState.rawValue)")
+        print("[WebRTCManager] Signaling state: \(connection.signalingState.rawValue)")
+        
+        // Give a small delay for ICE gathering to start
+        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        
+        // Check if we're already complete or if gathering started
+        if connection.iceGatheringState == .complete {
+            print("[WebRTCManager] ICE gathering already complete")
+            return
+        }
+        
+        // Try to restart ICE gathering if it hasn't started
+        if connection.iceGatheringState == .new {
+            print("[WebRTCManager] ICE gathering hasn't started, trying to restart ICE")
+            connection.restartIce()
+            try? await Task.sleep(nanoseconds: 100_000_000) // Give it time to start
+        }
+        
+        // For data-channel only connections, ICE gathering might not start
+        // until answer is set. We'll wait with a timeout.
+        let waiter = IceGatheringWaiter()
+        await waiter.wait(for: connection)
+    }
+}
+
+// Actor to manage ICE gathering state
+private actor IceGatheringWaiter {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var hasCompleted = false
+    
+    func wait(for connection: RTCPeerConnection) async {
+        if connection.iceGatheringState == .complete {
+            return
+        }
+        
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            
+            // Start timeout - 2 seconds should be enough for local candidates
+            Task {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                await self.complete(timedOut: true)
+            }
+            
+            // Start observing
+            Task { @MainActor in
+                let observer = IceGatheringObserver(connection: connection) { [weak self] in
+                    Task {
+                        await self?.complete(timedOut: false)
+                    }
+                }
+                observer.startObserving()
+            }
+        }
+    }
+    
+    private func complete(timedOut: Bool) {
+        guard !hasCompleted, let continuation = continuation else { return }
+        hasCompleted = true
+        self.continuation = nil
+        
+        if timedOut {
+            print("ICE gathering timeout reached")
+        } else {
+            print("ICE gathering completed")
+        }
+        
+        continuation.resume()
+    }
+}
+
+// Helper class to observe ICE gathering state
+private class IceGatheringObserver: NSObject {
+    private weak var connection: RTCPeerConnection?
+    private let completion: () -> Void
+    private var observation: NSKeyValueObservation?
+    
+    init(connection: RTCPeerConnection, completion: @escaping () -> Void) {
+        self.connection = connection
+        self.completion = completion
+        super.init()
+    }
+    
+    func startObserving() {
+        // Check if already complete
+        if connection?.iceGatheringState == .complete {
+            completion()
+            return
+        }
+        
+        // Use KVO to observe iceGatheringState changes
+        observation = connection?.observe(\.iceGatheringState, options: [.new, .initial]) { [weak self] connection, change in
+            let state = connection.iceGatheringState
+            print("[IceGatheringObserver] ICE gathering state changed to: \(state.rawValue) (\(self?.stateString(for: state) ?? "unknown"))")
+            if state == .complete {
+                self?.completion()
+                self?.observation?.invalidate()
+            }
+        }
+    }
+    
+    private func stateString(for state: RTCIceGatheringState) -> String {
+        switch state {
+        case .new: return "new"
+        case .gathering: return "gathering"
+        case .complete: return "complete"
+        @unknown default: return "unknown"
         }
     }
 }

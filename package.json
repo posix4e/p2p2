@@ -1,0 +1,74 @@
+{
+  "name": "p2p2",
+  "version": "1.0.0",
+  "description": "P2P communication library using Cloudflare DNS for peer discovery and WebRTC for data transfer",
+  "type": "module",
+  "main": "js/dist/index.js",
+  "types": "js/dist/index.d.ts",
+  "scripts": {
+    "// JavaScript Commands": "",
+    "build": "cd js && tsc",
+    "build:extension": "npm run build && cd js && node esbuild.extension.js",
+    "dev": "cd js && tsc --watch",
+    "example": "cd js && vite serve example",
+    "server": "cd js && node server.js",
+    "test:js": "cd js && playwright test tests/extension-service-worker.spec.ts",
+    "test:js:sync": "cd js && playwright test tests/extension-p2p-sync.spec.ts",
+    "test:js:all": "cd js && playwright test",
+    "test:js:headed": "cd js && playwright test --headed",
+    "lint:js": "cd js && eslint src/**/*.ts",
+    "typecheck": "cd js && tsc --noEmit",
+    "format:js": "cd js && prettier --write src/**/*.ts example/**/*.{html,js,ts}",
+    "// Swift Commands": "",
+    "build:swift": "swift build",
+    "test:swift": "swift test",
+    "lint:swift": "swiftlint",
+    "format:swift": "swiftlint --fix",
+    "cli": "swift run p2p2-cli",
+    "// Combined Commands": "",
+    "test": "npm run test:js && npm run test:swift",
+    "lint": "npm run lint:js && npm run lint:swift",
+    "format": "npm run format:js && npm run format:swift",
+    "// CI Commands": "",
+    "ci:js": "npm run build && npm run lint:js && npm run typecheck && npm run test:js",
+    "// Release Commands": "",
+    "release:prepare": "npm run build && npm run build:swift",
+    "release:pack:swift": "tar -czf p2p2-swift.tar.gz Package.swift Sources Tests README.md LICENSE"
+  },
+  "keywords": [
+    "p2p",
+    "webrtc",
+    "cloudflare",
+    "dns",
+    "peer-to-peer"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/chrome": "^0.0.326",
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "esbuild": "^0.19.12",
+    "eslint": "^8.55.0",
+    "prettier": "^3.1.0",
+    "typescript": "^5.3.0",
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2"
+  },
+  "files": [
+    "js/dist/**/*",
+    "js/src/**/*",
+    "js/package.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/posix4e/p2p2.git"
+  }
+}

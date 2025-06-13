@@ -2,7 +2,7 @@ import { P2P2Room } from './P2P2Room';
 import { P2P2Core, P2P2Options } from './P2P2Core';
 import { RoomConfig } from './types';
 import { InvalidConfigurationError } from './errors';
-import { BrowserAdapter, NodeAdapter, ChromeExtensionAdapter, createDefaultAdapter } from './adapters/EnvironmentAdapter';
+import { NodeAdapter, ChromeExtensionAdapter, createDefaultAdapter } from './adapters/EnvironmentAdapter';
 
 // Export all types and errors
 export * from './types';
@@ -15,7 +15,6 @@ export { WebRTCManager } from './WebRTCManager';
 
 // Export adapters for different environments
 export { 
-  BrowserAdapter, 
   NodeAdapter, 
   ChromeExtensionAdapter,
   createDefaultAdapter

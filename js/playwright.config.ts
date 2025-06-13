@@ -7,9 +7,12 @@ export default defineConfig({
   retries: 0,
   workers: undefined,
   reporter: 'html',
+  timeout: 180000, // Increase test timeout to 3 minutes for CI
   use: {
     baseURL: 'http://localhost:5173',
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
   },
 
   projects: [
@@ -19,9 +22,4 @@ export default defineConfig({
     },
   ],
 
-  webServer: {
-    command: 'npm run example',
-    port: 5173,
-    reuseExistingServer: true,
-  },
 });

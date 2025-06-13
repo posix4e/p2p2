@@ -2,7 +2,7 @@ import Foundation
 @preconcurrency import WebRTC
 
 /// Core P2P functionality that can be used in any Swift environment
-public class P2P2Core {
+public final class P2P2Core: @unchecked Sendable {
     public let dnsDiscovery: CloudflareDNSDiscovery
     public let webRTCManager: WebRTCManager
     
@@ -51,6 +51,50 @@ public class P2P2Core {
         )
     }
     
+    public func publishIceCandidate(roomId: String, targetPeerId: String, candidate: RTCIceCandidate, index: Int) async throws {
+        let candidateData: [String: Any] = [
+            "candidate": candidate.sdp,
+            "sdpMLineIndex": candidate.sdpMLineIndex,
+            "sdpMid": candidate.sdpMid ?? ""
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: candidateData),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            throw P2P2Error.signalingFailed("Failed to serialize ICE candidate")
+        }
+        
+        try await dnsDiscovery.publishIceCandidate(
+            roomId: roomId,
+            peerId: targetPeerId,
+            candidate: jsonString,
+            index: index
+        )
+    }
+    
+    public func getIceCandidates(roomId: String, fromPeerId: String) async throws -> [RTCIceCandidate] {
+        let candidateStrings = try await dnsDiscovery.getIceCandidates(
+            roomId: roomId,
+            fromPeerId: fromPeerId
+        )
+        
+        var candidates: [RTCIceCandidate] = []
+        
+        for candidateString in candidateStrings {
+            guard let data = candidateString.data(using: .utf8),
+                  let candidateData = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let sdp = candidateData["candidate"] as? String,
+                  let sdpMLineIndex = candidateData["sdpMLineIndex"] as? Int32 else {
+                continue
+            }
+            
+            let sdpMid = candidateData["sdpMid"] as? String
+            let candidate = RTCIceCandidate(sdp: sdp, sdpMLineIndex: sdpMLineIndex, sdpMid: sdpMid)
+            candidates.append(candidate)
+        }
+        
+        return candidates
+    }
+    
     // MARK: - WebRTC Operations
     
     public func createPeerConnection() async throws -> RTCPeerConnection {
@@ -60,6 +104,8 @@ public class P2P2Core {
     public func createDataChannel(_ connection: RTCPeerConnection, label: String = "data") -> RTCDataChannel? {
         let config = RTCDataChannelConfiguration()
         config.isOrdered = true
+        config.maxRetransmits = 3
+        config.isNegotiated = false // Let WebRTC negotiate it
         return connection.dataChannel(forLabel: label, configuration: config)
     }
     

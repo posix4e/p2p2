@@ -23,7 +23,13 @@ public struct RoomConfig: Sendable {
         domain: String,
         zoneId: String,
         apiToken: String,
-        stunServers: [String] = ["stun:stun.l.google.com:19302"],
+        stunServers: [String] = [
+            "stun:stun.l.google.com:19302",
+            "stun:stun1.l.google.com:19302",
+            "stun:stun2.l.google.com:19302",
+            "stun:stun3.l.google.com:19302",
+            "stun:stun4.l.google.com:19302"
+        ],
         turnServers: [TURNServer] = []
     ) {
         self.domain = domain

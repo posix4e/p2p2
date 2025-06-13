@@ -7,12 +7,14 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
+    "build:extension": "npm run build && node esbuild.extension.js",
     "dev": "tsc --watch",
     "example": "vite serve example",
     "server": "node server.js",
-    "test": "playwright test tests/e2e-extension.spec.ts",
-    "test:basic": "playwright test tests/real-e2e.spec.ts",
+    "test": "playwright test tests/extension-service-worker.spec.ts",
+    "test:sync": "playwright test tests/extension-p2p-sync.spec.ts",
     "test:all": "playwright test",
+    "test:headed": "playwright test --headed",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write src/**/*.ts example/**/*.{html,js,ts}"
@@ -25,20 +27,6 @@
     "peer-to-peer"
   ],
   "license": "MIT",
-  "devDependencies": {
-    "@playwright/test": "^1.40.0",
-    "@types/chrome": "^0.0.326",
-    "@types/node": "^20.10.0",
-    "@typescript-eslint/eslint-plugin": "^6.13.0",
-    "@typescript-eslint/parser": "^6.13.0",
-    "eslint": "^8.55.0",
-    "prettier": "^3.1.0",
-    "typescript": "^5.3.0",
-    "vite": "^5.0.0"
-  },
-  "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2"
-  }
+  "devDependencies": {},
+  "dependencies": {}
 }

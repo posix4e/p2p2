@@ -18,7 +18,8 @@ export class ChromeExtensionAdapter implements EnvironmentAdapter {
     clearTimeout(handle);
   }
 
-  getEnvironmentVariable(name: string): string | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  getEnvironmentVariable(_name: string): string | undefined {
     // In Chrome extensions, we don't use environment variables
     return undefined;
   }
@@ -30,31 +31,31 @@ export class ChromeExtensionAdapter implements EnvironmentAdapter {
         reject(new Error('Chrome runtime API not available'));
         return;
       }
-      
+
       chrome.runtime.sendMessage(
         {
           type: 'fetch',
           url,
-          options
+          options,
         },
         (response: any) => {
           if (chrome.runtime?.lastError) {
             reject(new Error(chrome.runtime.lastError.message));
             return;
           }
-          
+
           if (response?.error) {
             reject(new Error(response.error));
             return;
           }
-          
+
           // Create a Response-like object
           const fetchResponse = new Response(response.body, {
             status: response.status,
             statusText: response.statusText,
-            headers: response.headers
+            headers: response.headers,
           });
-          
+
           resolve(fetchResponse);
         }
       );

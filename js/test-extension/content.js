@@ -66,3 +66,23 @@ window.addEventListener('message', (event) => {
     script.remove();
   }
 });
+
+// Listen for P2P events from the service worker
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'peerJoined' || message.type === 'peerLeft' || message.type === 'dataReceived') {
+    // Forward to the page
+    const script = document.createElement('script');
+    script.textContent = `
+      if (window.chrome && window.chrome.runtime && window.chrome.runtime.onMessage) {
+        // Trigger any registered listeners
+        if (window.__p2p2MessageListeners) {
+          window.__p2p2MessageListeners.forEach(listener => {
+            listener(${JSON.stringify(message)});
+          });
+        }
+      }
+    `;
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+  }
+});
