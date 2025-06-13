@@ -2,13 +2,31 @@ import Foundation
 @preconcurrency import WebRTC
 
 public final class WebRTCManager: @unchecked Sendable {
-    nonisolated(unsafe) private static let factory: RTCPeerConnectionFactory = {
+    nonisolated(unsafe) private static var _factory: RTCPeerConnectionFactory?
+    private static let factoryLock = NSLock()
+    
+    nonisolated(unsafe) private static var factory: RTCPeerConnectionFactory {
+        factoryLock.lock()
+        defer { factoryLock.unlock() }
+        
+        if let existingFactory = _factory {
+            return existingFactory
+        }
+        
+        // Ignore SIGPIPE to prevent crashes when sockets are closed
+        signal(SIGPIPE, SIG_IGN)
         RTCInitializeSSL()
         // For data-channel only, we don't need video encoders/decoders
-        return RTCPeerConnectionFactory()
-    }()
+        let newFactory = RTCPeerConnectionFactory()
+        _factory = newFactory
+        return newFactory
+    }
     
     public static func cleanup() {
+        factoryLock.lock()
+        defer { factoryLock.unlock() }
+        
+        _factory = nil
         RTCCleanupSSL()
     }
     
