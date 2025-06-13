@@ -73,8 +73,14 @@ public actor P2P2Room: Sendable {
     }
     
     public func send(_ data: Data) throws {
+        print("[\(self.peerId)] Sending data to \(peers.count) peers")
         for peer in peers.values where peer.isConnected {
-            peer.dataChannel?.sendData(RTCDataBuffer(data: data, isBinary: true))
+            if let dataChannel = peer.dataChannel {
+                print("[\(self.peerId)] Sending to \(peer.id), channel state: \(dataChannel.readyState.rawValue)")
+                dataChannel.sendData(RTCDataBuffer(data: data, isBinary: true))
+            } else {
+                print("[\(self.peerId)] No data channel for \(peer.id)")
+            }
         }
     }
     
@@ -145,18 +151,26 @@ public actor P2P2Room: Sendable {
                     await self?.handleReceivedDataChannel(dataChannel, for: peerId)
                 }
             },
-            onIceCandidate: { [weak self] candidate in
-                Task { [weak self] in
-                    await self?.publishIceCandidate(candidate, for: peerId)
-                }
+            onIceCandidate: { candidate in
+                // For now, don't use trickle ICE - include candidates in SDP
+                print("[Initiator] Generated ICE candidate for \(peerId), including in SDP")
             }
         )
         connection.delegate = delegate
         
+        // Set up ICE connected callback
+        delegate.onIceConnected = { [weak self] in
+            Task { [weak self] in
+                await self?.handleConnectionStateChange(for: peerId, state: .connected)
+            }
+        }
+        
         let dataChannelConfig = RTCDataChannelConfiguration()
         dataChannelConfig.isOrdered = true
         dataChannelConfig.maxRetransmits = 3
+        dataChannelConfig.isNegotiated = false // Ensure it's negotiated in-band
         let dataChannel = connection.dataChannel(forLabel: "data", configuration: dataChannelConfig)
+        print("[\(self.peerId)] Created data channel: \(dataChannel != nil)")
         
         // Monitor connection state
         let observer = ConnectionStateObserver(connection: connection) { [weak self] state in
@@ -199,8 +213,12 @@ public actor P2P2Room: Sendable {
         
         // Debug: Check if candidates are in the SDP
         print("[\(self.peerId)] Updated SDP contains candidates: \(updatedOffer.sdp.contains("a=candidate"))")
+        print("[\(self.peerId)] SDP contains data channel: \(updatedOffer.sdp.contains("webrtc-datachannel"))")
         if !updatedOffer.sdp.contains("a=candidate") {
             print("[\(self.peerId)] WARNING: No ICE candidates in SDP after gathering!")
+        }
+        if !updatedOffer.sdp.contains("webrtc-datachannel") {
+            print("[\(self.peerId)] WARNING: No data channel in SDP!")
         }
         
         // Serialize offer to JSON format matching JavaScript
@@ -265,10 +283,10 @@ public actor P2P2Room: Sendable {
                     print("[\(self.peerId)] Answer SDP length: \(answer.sdp.count)")
                     try await core.setRemoteDescription(answer, for: connection)
                     
-                    // Start polling for ICE candidates
-                    Task {
-                        await pollForIceCandidates(from: peerId, connection: connection)
-                    }
+                    // Don't poll for ICE candidates - they're included in SDP
+                    // Task {
+                    //     await pollForIceCandidates(from: peerId, connection: connection)
+                    // }
                     
                     return
                 }
@@ -322,13 +340,19 @@ public actor P2P2Room: Sendable {
                 }
             },
             onIceCandidate: { candidate in
-                Task {
-                    await capturedSelf.publishIceCandidate(candidate, for: capturedPeerId)
-                }
+                // For now, don't use trickle ICE - include candidates in SDP
+                print("[Receiver] Generated ICE candidate for \(capturedPeerId), including in SDP")
             }
         )
         connection.delegate = delegate
         peer.dataChannelDelegate = delegate
+        
+        // Set up ICE connected callback
+        delegate.onIceConnected = { 
+            Task { 
+                await capturedSelf.handleConnectionStateChange(for: capturedPeerId, state: .connected)
+            }
+        }
         
         peers[peerId] = peer
         
@@ -401,10 +425,10 @@ public actor P2P2Room: Sendable {
                         data: jsonString
                     )
                     
-                    // Start polling for ICE candidates
-                    Task {
-                        await pollForIceCandidates(from: peerId, connection: connection)
-                    }
+                    // Don't poll for ICE candidates - they're included in SDP
+                    // Task {
+                    //     await pollForIceCandidates(from: peerId, connection: connection)
+                    // }
                     
                     return
                 }
@@ -427,14 +451,18 @@ public actor P2P2Room: Sendable {
     private func handleConnectionStateChange(for peerId: String, state: RTCPeerConnectionState) async {
         guard var peer = peers[peerId] else { return }
         
+        print("[\(self.peerId)] Connection state changed for \(peerId): \(state.rawValue)")
+        
         switch state {
         case .connected:
             if !peer.isConnected {
                 peer.isConnected = true
                 peers[peerId] = peer
+                print("[\(self.peerId)] Peer \(peerId) connected!")
                 onPeerJoinHandler?(peerId)
             }
         case .failed, .disconnected, .closed:
+            print("[\(self.peerId)] Removing peer \(peerId) due to state: \(state.rawValue)")
             removePeer(peerId)
         default:
             break
@@ -444,11 +472,17 @@ public actor P2P2Room: Sendable {
     private func setupDataChannel(_ channel: RTCDataChannel?, for peerId: String) {
         guard let channel = channel else { return }
         
-        let observer = DataChannelObserver { [weak self] state in
+        print("[\(self.peerId)] Setting up data channel for \(peerId), current state: \(channel.readyState.rawValue)")
+        
+        let observer = DataChannelObserver { state in
+            print("[DataChannel] State changed for \(peerId): \(state.rawValue)")
             if state == .open {
+                print("[DataChannel] Channel opened for \(peerId)")
                 Task { [weak self] in
                     await self?.handleDataChannelOpen(for: peerId)
                 }
+            } else if state == .closed || state == .closing {
+                print("[DataChannel] Channel closed/closing for \(peerId)")
             }
         } onMessage: { [weak self] data in
             Task { [weak self] in
@@ -475,7 +509,11 @@ public actor P2P2Room: Sendable {
     }
     
     private func handleReceivedDataChannel(_ dataChannel: RTCDataChannel, for peerId: String) async {
-        guard var peer = peers[peerId] else { return }
+        print("[\(self.peerId)] Received data channel from \(peerId)")
+        guard var peer = peers[peerId] else { 
+            print("[\(self.peerId)] WARNING: No peer found for \(peerId)")
+            return 
+        }
         peer.dataChannel = dataChannel
         peers[peerId] = peer
         setupDataChannel(dataChannel, for: peerId)
@@ -563,7 +601,8 @@ private class DataChannelObserver: NSObject, RTCDataChannelDelegate, @unchecked 
 fileprivate class ConnectionStateObserver: NSObject, @unchecked Sendable {
     private weak var connection: RTCPeerConnection?
     private let onStateChange: (RTCPeerConnectionState) -> Void
-    private var observation: NSKeyValueObservation?
+    private var connectionObservation: NSKeyValueObservation?
+    private var iceObservation: NSKeyValueObservation?
     
     init(connection: RTCPeerConnection, onStateChange: @escaping (RTCPeerConnectionState) -> Void) {
         self.connection = connection
@@ -572,14 +611,32 @@ fileprivate class ConnectionStateObserver: NSObject, @unchecked Sendable {
     }
     
     func startObserving() {
-        observation = connection?.observe(\.connectionState, options: [.new]) { [weak self] connection, _ in
+        // Observe connection state
+        connectionObservation = connection?.observe(\.connectionState, options: [.new, .initial]) { [weak self] connection, _ in
             self?.onStateChange(connection.connectionState)
+        }
+        
+        // Also observe ICE connection state as a workaround
+        iceObservation = connection?.observe(\.iceConnectionState, options: [.new, .initial]) { [weak self] connection, _ in
+            let iceState = connection.iceConnectionState
+            let connState = connection.connectionState
+            print("[ConnectionStateObserver] ICE state: \(iceState.rawValue), Peer state: \(connState.rawValue)")
+            
+            // If ICE is connected but peer connection state isn't updating, 
+            // manually trigger connected state
+            if (iceState == .connected || iceState == .completed) && 
+               connState == .new {
+                print("[ConnectionStateObserver] Workaround: ICE connected, triggering peer connected")
+                self?.onStateChange(.connected)
+            }
         }
     }
     
     func stopObserving() {
-        observation?.invalidate()
-        observation = nil
+        connectionObservation?.invalidate()
+        connectionObservation = nil
+        iceObservation?.invalidate()
+        iceObservation = nil
     }
 }
 
@@ -588,6 +645,7 @@ fileprivate class PeerConnectionDelegateWrapper: NSObject, RTCPeerConnectionDele
     private let peerId: String
     private let onDataChannel: @Sendable (RTCDataChannel) -> Void
     private let onIceCandidate: @Sendable (RTCIceCandidate) -> Void
+    var onIceConnected: (@Sendable () -> Void)?
     
     init(peerId: String, 
          onDataChannel: @escaping @Sendable (RTCDataChannel) -> Void,
@@ -603,7 +661,15 @@ fileprivate class PeerConnectionDelegateWrapper: NSObject, RTCPeerConnectionDele
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-        print("[\(peerId)] ICE connection state changed to: \(newState.rawValue)")
+        let peerConnState = peerConnection.connectionState
+        print("[\(peerId)] ICE connection state changed to: \(newState.rawValue), peer conn state: \(peerConnState.rawValue)")
+        
+        // Workaround: Trigger connected callback when peer connection is connected
+        // (KVO on connectionState doesn't work properly)
+        if peerConnState == .connected {
+            print("[\(peerId)] Peer connection is connected - triggering callback")
+            onIceConnected?()
+        }
     }
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
         print("[\(peerId)] ICE gathering state changed to: \(newState.rawValue)")
@@ -616,7 +682,7 @@ fileprivate class PeerConnectionDelegateWrapper: NSObject, RTCPeerConnectionDele
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
-        print("[\(peerId)] Received data channel")
+        print("[\(peerId)] Received data channel: label=\(dataChannel.label), state=\(dataChannel.readyState.rawValue), id=\(dataChannel.channelId)")
         onDataChannel(dataChannel)
     }
 }

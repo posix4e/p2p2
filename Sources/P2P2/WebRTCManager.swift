@@ -71,24 +71,12 @@ public final class WebRTCManager: @unchecked Sendable {
     func createPeerConnection() async throws -> RTCPeerConnection {
         let config = RTCConfiguration()
         config.iceServers = iceServers
-        config.bundlePolicy = .balanced
-        config.rtcpMuxPolicy = .require
-        config.tcpCandidatePolicy = .enabled
-        config.continualGatheringPolicy = .gatherContinually
         config.sdpSemantics = .unifiedPlan
-        // For local testing, use only host candidates to avoid waiting for STUN
-        config.iceTransportPolicy = .all // Change to .relay to use only TURN
-        config.candidateNetworkPolicy = .all
+        config.bundlePolicy = .maxBundle
+        config.rtcpMuxPolicy = .require
         
-        
-        // Add more aggressive ICE gathering for local testing
-        config.iceCandidatePoolSize = 10
-        config.audioJitterBufferMaxPackets = 50
-        config.iceConnectionReceivingTimeout = 10000
-        config.iceBackupCandidatePairPingInterval = 1000
-        
-        // For data-channel only connections, we might need this
-        config.activeResetSrtpParams = true
+        // Certificate for DTLS
+        config.certificate = nil // Let WebRTC generate certificates
         
         guard let connection = Self.factory.peerConnection(
             with: config,
